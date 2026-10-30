@@ -719,6 +719,44 @@ button:disabled {
 .zone-editor,
 .cameras {
   width: min(92vw, 760px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+/* The generic viewer rules pad bare paragraphs for empty states; inside these dialogs text uses the full width. */
+.zone-editor .viewer-body > p,
+.cameras .viewer-body > p {
+  padding: 0;
+}
+/* Hint text in the rail is a narrow column; in a dialog it reads at a normal line length. */
+.zone-editor .hint,
+.cameras .hint {
+  max-width: 68ch;
+  line-height: 1.55;
+}
+/* Touch targets: at least 44px tall inside the dialogs, with room between them. */
+.zone-editor button,
+.cameras button,
+.zone-editor .viewer-bar a {
+  min-height: 44px;
+}
+.zone-editor .modes button {
+  min-height: 44px;
+}
+.zone-tools,
+.presets {
+  gap: 8px;
+}
+.zone-list li {
+  min-height: 44px;
+}
+.zone-editor .viewer-bar {
+  position: sticky;
+  bottom: -18px; /* sits on the dialog's bottom edge while the content scrolls under it */
+  margin: 0 -18px -18px;
+  padding: 12px 18px;
+  background: var(--ink);
+  border-top: 1px solid var(--line);
+  justify-content: flex-start;
 }
 .viewer-body > h2,
 .cam-head h2 {
@@ -738,12 +776,18 @@ button:disabled {
   border-radius: 4px;
   overflow: hidden;
 }
-.zone-stage img,
-.zone-stage > p {
+.zone-stage img {
+  display: block;
   width: 100%;
   height: 100%;
   object-fit: fill;
+}
+.zone-stage > p {
+  display: grid;
+  place-items: center;
+  height: 100%;
   padding: 0;
+  color: var(--muted);
 }
 .zone-layer {
   position: absolute;
@@ -773,34 +817,42 @@ button:disabled {
 .zone.draft {
   stroke-dasharray: 3 3;
 }
+/* Motion level: a thin track with the threshold mark, and the numbers on their own line below it. */
 .level {
   position: relative;
-  height: 24px;
+  padding-top: 18px;
+}
+.level::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 10px;
   background: var(--slate);
   border: 1px solid var(--line);
-  border-radius: 4px;
-  overflow: hidden;
+  border-radius: 5px;
 }
 .level .bar {
   position: absolute;
-  inset: 0 auto 0 0;
-  background: #3d4a60;
+  top: 1px;
+  left: 1px;
+  max-width: calc(100% - 2px);
+  height: 8px;
+  border-radius: 4px;
+  background: #5b6b86;
 }
 .level .bar.over {
   background: var(--signal);
 }
 .level .mark {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  top: -3px;
   width: 2px;
+  height: 16px;
   background: var(--text);
 }
 .level .caption {
-  position: relative;
-  padding: 0 8px;
-  font-size: 0.8125rem;
-  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 0.875rem;
 }
 .zone-tools {
   display: flex;
