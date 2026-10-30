@@ -166,32 +166,11 @@ export async function deleteClip(id: string): Promise<void> {
   if (!res.ok) throw new Error(await errorText(res, "Couldn't delete the clip"));
 }
 
-export interface LightState {
-  configured: boolean;
-  reachable?: boolean;
+export interface LightPatch {
   on?: boolean;
   brightness?: number;
   hue?: number;
   saturation?: number;
-  temperature?: number;
-}
-
-export type LightPatch = Partial<Pick<LightState, "on" | "brightness" | "hue" | "saturation">>;
-
-export async function getLight(): Promise<LightState> {
-  const res = await api("/api/light");
-  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the light"));
-  return (await res.json()) as LightState;
-}
-
-export async function setLight(patch: LightPatch): Promise<LightState> {
-  const res = await api("/api/light", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  if (!res.ok) throw new Error(await errorText(res, "Couldn't change the light"));
-  return (await res.json()) as LightState;
 }
 
 export interface Lamp {
