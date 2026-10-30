@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { buildApp } from "../src/app.js";
 import { defaultMotion, type Config } from "../src/config.js";
+import { testConfig } from "./helpers.js";
 import { hsToHex } from "../src/lights.js";
 
 const TOKEN = "test-token-0123456789abcdef";
@@ -32,31 +33,7 @@ describe("lights API with a Bluetooth helper (mock)", () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
   const saved = { t: process.env.BLE_HELPER_TOKEN, p: process.env.BLE_HELPER_PORT };
 
-  const cfg = (port: number): Config => ({
-    port: 0,
-    host: "127.0.0.1",
-    apiToken: TOKEN,
-    go2rtcUrl: "http://127.0.0.1:1",
-    stream: "cam",
-    dataDir,
-    publicDir: join(dataDir, "none"),
-    input: "unused",
-    ffmpegPath: "ffmpeg",
-    retentionDays: 7,
-    signedUrlTtlSec: 3600,
-    detect: { enabled: false, modelPath: "", minScore: 0.4, maxFrames: 5, discardEmpty: true },
-    maxStorageBytes: 1024 ** 3,
-    pushMinIntervalSec: 120,
-    pushUrl: "http://127.0.0.1:1/push",
-    expoAccessToken: "",
-    authMaxFailures: 10,
-    authWindowSec: 60,
-    motion: defaultMotion({ enabled: false }),
-    keepAliveMs: 300,
-    warmupPollMs: 20,
-    warmupAttempts: 5,
-    lightPort: port,
-  });
+  const cfg = (port: number): Config => (testConfig({ apiToken: TOKEN, dataDir, publicDir: join(dataDir, "none"), lightPort: port }));
 
   before(async () => {
     helper = createServer((req, res) => {

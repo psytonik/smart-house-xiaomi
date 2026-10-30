@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { buildApp } from "../src/app.js";
 import { defaultMotion, type Config } from "../src/config.js";
+import { testConfig } from "./helpers.js";
 
 const TOKEN = "t".repeat(24);
 const auth = { authorization: `Bearer ${TOKEN}` };
@@ -60,13 +61,7 @@ describe("camera setup API", () => {
     dataDir = mkdtempSync(join(tmpdir(), "cam-xiaomi-"));
     mkdirSync(join(dataDir, "public"));
     writeFileSync(join(dataDir, "public", "index.html"), "<!doctype html><title>cam</title>");
-    const cfg: Config = {
-      port: 0, host: "127.0.0.1", apiToken: TOKEN, go2rtcUrl: `http://127.0.0.1:${port}`, stream: "cam", dataDir, publicDir: join(dataDir, "public"),
-      input: "unused", ffmpegPath: "ffmpeg", retentionDays: 7, motion: defaultMotion({ enabled: false }), signedUrlTtlSec: 3600,
-      detect: { enabled: false, modelPath: "", minScore: 0.4, maxFrames: 5, discardEmpty: true },
-      maxStorageBytes: 1024 ** 3, pushMinIntervalSec: 120, pushUrl: "http://127.0.0.1:1/push", expoAccessToken: "",
-      authMaxFailures: 10, authWindowSec: 60, keepAliveMs: 300, warmupPollMs: 20, warmupAttempts: 5,
-    };
+    const cfg: Config = testConfig({ apiToken: TOKEN, go2rtcUrl: `http://127.0.0.1:${port}`, dataDir });
     app = await buildApp(cfg);
   });
 

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { defaultMotion, type Config } from "../src/config.js";
+import { testConfig } from "./helpers.js";
 import { MotionRecorder, segmentStart } from "../src/recorder.js";
 
 const hasFfmpeg = spawnSync("ffmpeg", ["-version"]).status === 0;
@@ -18,12 +19,7 @@ function makeSource(path: string, parts: string, codec = "libx264") {
 }
 
 function configFor(dir: string, input: string): Config {
-  return {
-    port: 0, host: "127.0.0.1", apiToken: "x".repeat(20), go2rtcUrl: "http://127.0.0.1:1", stream: "cam",
-    dataDir: dir, publicDir: join(dir, "public"), signedUrlTtlSec: 3600, detect: { enabled: false, modelPath: "", minScore: 0.4, maxFrames: 5, discardEmpty: true }, maxStorageBytes: 1024 ** 3, pushMinIntervalSec: 120, pushUrl: "http://127.0.0.1:1/push", expoAccessToken: "", authMaxFailures: 10, authWindowSec: 60, keepAliveMs: 100, warmupPollMs: 10, warmupAttempts: 1,
-    input, ffmpegPath: "ffmpeg", retentionDays: 7,
-    motion: defaultMotion({ threshold: 0.02, fps: 5, width: 160, height: 90, quietSec: 1.5, preRollSec: 1, postRollSec: 1, segmentSec: 1 }),
-  };
+  return testConfig({ apiToken: "x".repeat(20), dataDir: dir, input, keepAliveMs: 100, warmupPollMs: 10, warmupAttempts: 1, motion: defaultMotion({ threshold: 0.02, fps: 5, width: 160, height: 90, quietSec: 1.5, preRollSec: 1, postRollSec: 1, segmentSec: 1 }) });
 }
 
 describe("segmentStart", () => {

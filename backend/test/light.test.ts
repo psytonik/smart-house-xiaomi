@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { buildApp } from "../src/app.js";
 import { defaultMotion, type Config } from "../src/config.js";
+import { testConfig } from "./helpers.js";
 import { CozyLight, fromDevice, toDevice } from "../src/light.js";
 
 const TOKEN = "test-token-0123456789abcdef";
@@ -68,32 +69,7 @@ describe("lamp over the network (mock)", () => {
     port = (lamp.address() as AddressInfo).port;
 
     dataDir = mkdtempSync(join(tmpdir(), "light-test-"));
-    const cfg: Config = {
-      port: 0,
-      host: "127.0.0.1",
-      apiToken: TOKEN,
-      go2rtcUrl: "http://127.0.0.1:1",
-      stream: "cam",
-      dataDir,
-      publicDir: join(dataDir, "none"),
-      input: "unused",
-      ffmpegPath: "ffmpeg",
-      retentionDays: 7,
-      signedUrlTtlSec: 3600,
-      detect: { enabled: false, modelPath: "", minScore: 0.4, maxFrames: 5, discardEmpty: true },
-      maxStorageBytes: 1024 ** 3,
-      pushMinIntervalSec: 120,
-      pushUrl: "http://127.0.0.1:1/push",
-      expoAccessToken: "",
-      authMaxFailures: 10,
-      authWindowSec: 60,
-      motion: defaultMotion({ enabled: false }),
-      lightIp: "127.0.0.1",
-      lightPort: port,
-      keepAliveMs: 300,
-      warmupPollMs: 20,
-      warmupAttempts: 5,
-    };
+    const cfg: Config = testConfig({ apiToken: TOKEN, dataDir, publicDir: join(dataDir, "none"), lightIp: "127.0.0.1", lightPort: port });
     app = await buildApp(cfg);
   });
 
@@ -150,31 +126,7 @@ describe("lamp over the network (mock)", () => {
 });
 
 describe("lamp not configured or offline", () => {
-  const base = (over: Partial<Config>): Config => ({
-    port: 0,
-    host: "127.0.0.1",
-    apiToken: TOKEN,
-    go2rtcUrl: "http://127.0.0.1:1",
-    stream: "cam",
-    dataDir: mkdtempSync(join(tmpdir(), "light-test2-")),
-    publicDir: "/nonexistent",
-    input: "unused",
-    ffmpegPath: "ffmpeg",
-    retentionDays: 7,
-    signedUrlTtlSec: 3600,
-    detect: { enabled: false, modelPath: "", minScore: 0.4, maxFrames: 5, discardEmpty: true },
-    maxStorageBytes: 1024 ** 3,
-    pushMinIntervalSec: 120,
-    pushUrl: "http://127.0.0.1:1/push",
-    expoAccessToken: "",
-    authMaxFailures: 10,
-    authWindowSec: 60,
-    motion: defaultMotion({ enabled: false }),
-    keepAliveMs: 300,
-    warmupPollMs: 20,
-    warmupAttempts: 5,
-    ...over,
-  });
+  const base = (over: Partial<Config>): Config => (testConfig({ apiToken: TOKEN, dataDir: mkdtempSync(join(tmpdir(), "light-test2-")), publicDir: "/nonexistent", ...over }));
 
   it("says so when LIGHT_IP is not set", async () => {
     const app = await buildApp(base({}));
