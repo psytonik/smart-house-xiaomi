@@ -107,7 +107,7 @@ describe("Clips as episodes", () => {
 });
 
 describe("Clips with recognised objects", () => {
-  const labelled = [clip("c", 15, 2, 30, 20, [{ label: "person", score: 0.9 }]), clip("b", 14, 0, 30, 20, []), clip("a", 12, 0, 30, 20, [{ label: "vehicle", score: 0.7 }])];
+  const labelled = [clip("c", 15, 2, 30, 20, [{ label: "person", score: 0.9 }]), clip("b", 14, 0, 30, 20, []), clip("a", 12, 0, 30, 20, [{ label: "animal", score: 0.7 }])];
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -122,8 +122,8 @@ describe("Clips with recognised objects", () => {
     setup(labelled);
     const cards = screen.getAllByRole("listitem");
     expect(within(cards[0]!).getByText("Person")).toBeTruthy();
-    expect(within(cards[2]!).getByText("Vehicle")).toBeTruthy();
-    expect(within(cards[1]!).queryByText(/person|vehicle|animal/i)).toBeNull();
+    expect(within(cards[2]!).getByText("Animal")).toBeTruthy();
+    expect(within(cards[1]!).queryByText(/person|animal/i)).toBeNull();
   });
 
   it("filters by what the clips contain, including 'Nothing found'", () => {

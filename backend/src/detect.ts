@@ -2,18 +2,19 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 
 /**
- * Object detection for motion clips with YOLOX-Tiny (Apache-2.0) through onnxruntime.
- * A few frames of each finished clip are checked; the result is "person", "vehicle" and "animal" labels.
- * It only labels clips: nothing is ever dropped because of it.
+ * Object detection for motion clips with a YOLOX model (Apache-2.0) through onnxruntime.
+ * A few frames of each finished clip are checked; the result is "person" and "animal" labels.
+ * The picture size is read from the model: 416 for YOLOX-Tiny, 640 for YOLOX-S/M/L.
  */
 
+/** The size used when the model does not say (YOLOX-Tiny). */
 export const INPUT_SIZE = 416;
 const STRIDES = [8, 16, 32];
 const CLASSES = 80;
 const WIDTH = 5 + CLASSES; // x, y, w, h, objectness, 80 class scores
 const NMS_IOU = 0.45;
 
-export type ObjectLabel = "person" | "vehicle" | "animal";
+export type ObjectLabel = "person" | "animal";
 
 export interface ObjectSummary {
   label: ObjectLabel;
@@ -29,10 +30,17 @@ export interface Candidate {
   classId: number;
 }
 
+/** The side of the square picture a model wants, from its input metadata (shape [1, 3, H, W]); the default if unclear. */
+export function inputSizeOf(inputs: ReadonlyArray<{ shape?: ReadonlyArray<number | string> }> | undefined): number {
+  const shape = inputs?.[0]?.shape;
+  const h = shape?.[2];
+  const w = shape?.[3];
+  return typeof h === "number" && h === w && h >= 32 ? h : INPUT_SIZE;
+}
+
 /** COCO classes grouped the way a home needs them. Everything else (chairs, bottles, ...) is ignored. */
 export function groupOf(classId: number): ObjectLabel | null {
   if (classId === 0) return "person";
-  if ([1, 2, 3, 5, 7].includes(classId)) return "vehicle"; // bicycle, car, motorcycle, bus, truck
   if (classId >= 14 && classId <= 19) return "animal"; // bird, cat, dog, horse, sheep, cow
   return null;
 }
@@ -92,14 +100,14 @@ export function nms(candidates: Candidate[], threshold = NMS_IOU): Candidate[] {
   return kept;
 }
 
-/** The best score per label, in a fixed order (person, vehicle, animal). */
+/** The best score per label, in a fixed order (person, animal). */
 export function summarize(candidates: Candidate[]): ObjectSummary[] {
   const best = new Map<ObjectLabel, number>();
   for (const c of candidates) {
     const label = groupOf(c.classId);
     if (label && c.score > (best.get(label) ?? 0)) best.set(label, c.score);
   }
-  return (["person", "vehicle", "animal"] as const).filter((l) => best.has(l)).map((label) => ({ label, score: best.get(label)! }));
+  return (["person", "animal"] as const).filter((l) => best.has(l)).map((label) => ({ label, score: best.get(label)! }));
 }
 
 /** A BGR picture (what ffmpeg's bgr24 gives) to the model's channels-first float input. YOLOX takes raw 0..255 values. */
@@ -140,14 +148,14 @@ export async function summarizeClip(scan: ClipScan): Promise<ObjectSummary[]> {
 
 // ---------------------------------------------------------------- the real thing
 
-/** One frame of a video file as 416x416 BGR, shrunk to fit and padded at the right and bottom with gray (as YOLOX was trained). */
-export function extractFrame(ffmpegPath: string, file: string, atSec: number): Promise<Uint8Array | null> {
+/** One frame of a video file as size x size BGR, shrunk to fit and padded at the right and bottom with gray (as YOLOX was trained). */
+export function extractFrame(ffmpegPath: string, file: string, atSec: number, size = INPUT_SIZE): Promise<Uint8Array | null> {
   return new Promise((resolve) => {
     const p = spawn(
       ffmpegPath,
       [
         "-hide_banner", "-loglevel", "error", "-ss", String(atSec), "-i", file, "-frames:v", "1",
-        "-vf", `scale=${INPUT_SIZE}:${INPUT_SIZE}:force_original_aspect_ratio=decrease,pad=${INPUT_SIZE}:${INPUT_SIZE}:0:0:color=0x727272`,
+        "-vf", `scale=${size}:${size}:force_original_aspect_ratio=decrease,pad=${size}:${size}:0:0:color=0x727272`,
         "-pix_fmt", "bgr24", "-f", "rawvideo", "pipe:1",
       ],
       { stdio: ["ignore", "pipe", "ignore"] },
@@ -162,13 +170,14 @@ export function extractFrame(ffmpegPath: string, file: string, atSec: number): P
     p.on("close", () => {
       clearTimeout(timer);
       const data = Buffer.concat(chunks);
-      resolve(data.length === INPUT_SIZE * INPUT_SIZE * 3 ? new Uint8Array(data) : null);
+      resolve(data.length === size * size * 3 ? new Uint8Array(data) : null);
     });
   });
 }
 
 interface Session {
   inputNames: readonly string[];
+  inputMetadata?: ReadonlyArray<{ shape?: ReadonlyArray<number | string> }>;
   outputNames: readonly string[];
   run(feeds: Record<string, unknown>): Promise<Record<string, { data: unknown }>>;
 }
@@ -183,6 +192,8 @@ export class ObjectDetector {
     private readonly ort: Ort,
     private readonly minScore: number,
     readonly model: string,
+    /** Side of the square picture the model takes. */
+    readonly size: number,
   ) {}
 
   /** Null when the model file or the runtime is missing: the app then just works without detection. */
@@ -194,8 +205,9 @@ export class ObjectDetector {
     try {
       const ort = await import("onnxruntime-node");
       const session = (await ort.InferenceSession.create(modelPath)) as unknown as Session;
-      log(`detect: loaded ${modelPath}`);
-      return new ObjectDetector(session, ort as unknown as Ort, minScore, modelPath.split("/").pop() ?? modelPath);
+      const size = inputSizeOf(session.inputMetadata);
+      log(`detect: loaded ${modelPath} (${size}x${size})`);
+      return new ObjectDetector(session, ort as unknown as Ort, minScore, modelPath.split("/").pop() ?? modelPath, size);
     } catch (e) {
       log(`detect: could not start the model (${e instanceof Error ? e.message : e})`);
       return null;
@@ -203,10 +215,10 @@ export class ObjectDetector {
   }
 
   async detect(frame: Uint8Array): Promise<Candidate[]> {
-    const input = new this.ort.Tensor("float32", toTensor(frame), [1, 3, INPUT_SIZE, INPUT_SIZE]);
+    const input = new this.ort.Tensor("float32", toTensor(frame, this.size, this.size), [1, 3, this.size, this.size]);
     const out = await this.session.run({ [this.session.inputNames[0]!]: input });
     const data = out[this.session.outputNames[0]!]!.data as Float32Array;
-    return nms(decodeYolox(data, this.minScore));
+    return nms(decodeYolox(data, this.minScore, this.size));
   }
 
   /** Looks at a few frames of a finished clip. Throws if the clip cannot be read. */
@@ -214,7 +226,7 @@ export class ObjectDetector {
     return summarizeClip({
       durationSec,
       maxFrames,
-      extract: (t) => extractFrame(ffmpegPath, clipFile, t),
+      extract: (t) => extractFrame(ffmpegPath, clipFile, t, this.size),
       detect: (f) => this.detect(f),
     });
   }

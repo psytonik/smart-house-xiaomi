@@ -4,11 +4,10 @@ import { dayKey, dayLabel, episodeLabels, filterByDay, filterByObject, groupEpis
 import { clipDay, clipTime, duration, megabytes } from "../util";
 import { PrivacyOverlay } from "./PrivacyOverlay";
 
-const WORD: Record<ObjectLabel, string> = { person: "Person", vehicle: "Vehicle", animal: "Animal" };
+const WORD: Record<ObjectLabel, string> = { person: "Person", animal: "Animal" };
 const FILTERS: Array<{ id: ObjectFilter | null; label: string }> = [
   { id: null, label: "All" },
   { id: "person", label: "People" },
-  { id: "vehicle", label: "Vehicles" },
   { id: "animal", label: "Animals" },
   { id: "none", label: "Nothing found" },
 ];

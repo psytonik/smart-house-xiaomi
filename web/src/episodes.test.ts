@@ -88,10 +88,10 @@ describe("objects in clips", () => {
 
   it("lists what an episode contains, merged over its clips, in a fixed order", () => {
     const [ep] = groupEpisodes([
-      { ...clip("b", 14, 1, 0), objects: [{ label: "vehicle", score: 0.7 }] },
-      { ...clip("a", 14, 0, 0), objects: [{ label: "person", score: 0.9 }, { label: "vehicle", score: 0.5 }] },
+      { ...clip("b", 14, 1, 0), objects: [{ label: "animal", score: 0.7 }] },
+      { ...clip("a", 14, 0, 0), objects: [{ label: "person", score: 0.9 }, { label: "animal", score: 0.5 }] },
     ]);
-    expect(episodeLabels(ep!)).toEqual(["person", "vehicle"]);
+    expect(episodeLabels(ep!)).toEqual(["person", "animal"]);
   });
 
   it("an episode with nothing analysed has no labels", () => {
@@ -99,11 +99,10 @@ describe("objects in clips", () => {
   });
 
   it("filters clips by what they contain; 'none' means analysed and empty, not 'unknown'", () => {
-    const clips = [seen("p", [{ label: "person", score: 0.9 }]), seen("c", [{ label: "vehicle", score: 0.8 }]), seen("e", []), seen("u", undefined)];
+    const clips = [seen("p", [{ label: "person", score: 0.9 }]), seen("c", [{ label: "animal", score: 0.8 }]), seen("e", []), seen("u", undefined)];
     expect(filterByObject(clips, null).map((c) => c.id)).toEqual(["p", "c", "e", "u"]);
     expect(filterByObject(clips, "person").map((c) => c.id)).toEqual(["p"]);
-    expect(filterByObject(clips, "vehicle").map((c) => c.id)).toEqual(["c"]);
-    expect(filterByObject(clips, "animal")).toEqual([]);
+    expect(filterByObject(clips, "animal").map((c) => c.id)).toEqual(["c"]);
     expect(filterByObject(clips, "none").map((c) => c.id)).toEqual(["e"]);
   });
 

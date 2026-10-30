@@ -152,7 +152,7 @@ export interface Clip {
   clipUrl: string;
   thumbUrl: string | null;
   /** What the detector saw. Absent: never analysed. Empty: analysed, nothing found. */
-  objects?: Array<{ label: "person" | "vehicle" | "animal"; score: number }>;
+  objects?: Array<{ label: "person" | "animal"; score: number }>;
 }
 
 export async function listClips(): Promise<Clip[]> {

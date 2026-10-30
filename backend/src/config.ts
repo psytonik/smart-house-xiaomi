@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 export interface MotionConfig {
@@ -114,6 +115,13 @@ function num(env: NodeJS.ProcessEnv, name: string, fallback: number, min: number
   return v;
 }
 
+/** YOLOX-M (./camera.sh fetch-model); an older install that only has YOLOX-Tiny keeps working. */
+function defaultModelPath(): string {
+  const dir = resolve(import.meta.dirname, "..", "models");
+  const medium = resolve(dir, "yolox_m.onnx");
+  return existsSync(medium) || !existsSync(resolve(dir, "yolox_tiny.onnx")) ? medium : resolve(dir, "yolox_tiny.onnx");
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const apiToken = env.API_TOKEN ?? "";
   if (apiToken.length < 16) {
@@ -147,7 +155,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     }),
     detect: {
       enabled: env.DETECT_ENABLED !== "false",
-      modelPath: env.DETECT_MODEL ?? resolve(import.meta.dirname, "..", "models", "yolox_tiny.onnx"),
+      modelPath: env.DETECT_MODEL ?? defaultModelPath(),
       minScore: num(env, "DETECT_MIN_SCORE", 40, 5, 99) / 100,
       maxFrames: 5,
       discardEmpty: env.DETECT_DISCARD_EMPTY !== "false",

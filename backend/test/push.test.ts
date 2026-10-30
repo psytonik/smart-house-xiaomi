@@ -142,8 +142,8 @@ describe("PushService notifications", () => {
     const push = h.make();
     await push.init();
     await push.register(A);
-    await push.notifyClip(clip("c1", { objects: [{ label: "person", score: 0.9 }, { label: "vehicle", score: 0.6 }] }));
-    assert.equal(h.sent[0]!.messages[0]!.body, "14:32 · 12 s · person, vehicle");
+    await push.notifyClip(clip("c1", { objects: [{ label: "person", score: 0.9 }, { label: "animal", score: 0.6 }] }));
+    assert.equal(h.sent[0]!.messages[0]!.body, "14:32 · 12 s · person, animal");
     await h.advance(200_000);
     await push.notifyClip(clip("c2", { objects: [] }));
     assert.equal(h.sent[1]!.messages[0]!.body, "14:32 · 12 s", "analysed but nothing found: no label");

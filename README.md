@@ -33,7 +33,7 @@
 | `./camera.sh logs` | следить за логами (`logs/go2rtc.log`, `logs/backend.log`) |
 | `./camera.sh motor left` | повернуть камеру руками (`left`, `right`, `up`, `down`) |
 | `./camera.sh build-motor` | собрать go2rtc с поддержкой поворота (нужны git и Go ≥ 1.26) |
-| `./camera.sh fetch-model` | один раз скачать модель распознавания людей и машин (~20 МБ, Apache-2.0) |
+| `./camera.sh fetch-model` | один раз скачать модель распознавания людей и животных (YOLOX-M, ~97 МБ, Apache-2.0) |
 | `./camera.sh label-clips` | добавить метки «человек / машина / животное» старым клипам |
 
 Скрипт безопасно запускать повторно: уже работающие go2rtc или бэкенд (даже запущенные вами в другом терминале) он использует и не трогает.
@@ -53,7 +53,7 @@
 ```
 Камера Xiaomi ──P2P──> go2rtc-motor (127.0.0.1) ──> backend (Fastify, :3100) ──> веб-приложение (React)
                                                       ├─ ffmpeg: запись по движению, зоны
-                                                      ├─ YOLOX-Tiny (onnxruntime): метки на клипах
+                                                      ├─ YOLOX-M (onnxruntime): метки на клипах
                                                       └─ пуши через Expo
 ```
 

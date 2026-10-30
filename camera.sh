@@ -10,7 +10,7 @@
 #   ./camera.sh logs         follow the logs of both
 #   ./camera.sh motor left|right|up|down     move the camera by hand (go2rtc must be running)
 #   ./camera.sh build-motor  build go2rtc-motor from source (needs git and Go >= 1.26)
-#   ./camera.sh fetch-model  download the object detection model (YOLOX-Tiny, ~20 MB, Apache-2.0) once
+#   ./camera.sh fetch-model  download the object detection model (YOLOX-M, ~97 MB, Apache-2.0) once
 #   ./camera.sh label-clips  label older clips with person / vehicle / animal (after fetch-model)
 #   ./camera.sh ble-setup    one-time setup of the Bluetooth helper for the Lotus Lantern strip (run from Terminal.app)
 #   ./camera.sh autostart install|uninstall|status   start everything at login via launchd, restart it if a service dies
@@ -41,11 +41,11 @@ HOST=$(env_value HOST);          HOST=${HOST:-127.0.0.1}
 STREAM=$(env_value STREAM_NAME); STREAM=${STREAM:-psytonik_base}
 BLE_PORT=${BLE_HELPER_PORT:-3200}
 
-# Object detection model: YOLOX-Tiny from the official YOLOX release (Apache-2.0). The checksum is pinned, so a
+# Object detection model: YOLOX-M from the official YOLOX release (Apache-2.0). The checksum is pinned, so a
 # different or damaged file is refused.
-MODEL_FILE=backend/models/yolox_tiny.onnx
-MODEL_URL=https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_tiny.onnx
-MODEL_SHA256=427cc366d34e27ff7a03e2899b5e3671425c262ea2291f88bb942bc1cc70b0f7
+MODEL_FILE=backend/models/yolox_m.onnx
+MODEL_URL=https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_m.onnx
+MODEL_SHA256=21ff6cfdeb53b013bac2249599e55f00bff3cfdfdab37ed7a4620818c1d15b3f
 
 http_up()   { curl -s -o /dev/null --max-time 2 "$1"; }
 pid_of()    { cat "$RUN/$1.pid" 2>/dev/null; }
@@ -361,7 +361,7 @@ cmd_fetch_model() {
     say "Модель уже на месте и проверена: $MODEL_FILE"
     return
   fi
-  say "Скачиваю YOLOX-Tiny (~20 МБ) с github.com/Megvii-BaseDetection/YOLOX..."
+  say "Скачиваю YOLOX-M (~97 МБ) с github.com/Megvii-BaseDetection/YOLOX..."
   curl -fL --max-time 300 -o "$MODEL_FILE.part" "$MODEL_URL" || { rm -f "$MODEL_FILE.part"; die "не удалось скачать модель"; }
   if [ "$(shasum -a 256 "$MODEL_FILE.part" | cut -d' ' -f1)" != "$MODEL_SHA256" ]; then
     rm -f "$MODEL_FILE.part"

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decodeYolox, groupOf, nms, summarize, summarizeClip, toTensor, type Candidate } from "../src/detect.js";
+import { INPUT_SIZE, decodeYolox, groupOf, inputSizeOf, nms, summarize, summarizeClip, toTensor, type Candidate } from "../src/detect.js";
 
 const SIZE = 416;
 const ANCHORS = 3549; // 52*52 + 26*26 + 13*13
@@ -18,6 +18,34 @@ function put(out: Float32Array, anchor: number, v: { x: number; y: number; w: nu
   out[o + 4] = v.obj;
   out[o + 5 + v.cls] = v.score;
 }
+
+describe("inputSizeOf", () => {
+  it("reads the picture size the model wants (YOLOX-Tiny 416, YOLOX-S/M/L 640)", () => {
+    assert.equal(inputSizeOf([{ shape: [1, 3, 640, 640] }]), 640);
+    assert.equal(inputSizeOf([{ shape: [1, 3, 416, 416] }]), 416);
+  });
+
+  it("falls back to the default when the model does not say (dynamic or missing shape)", () => {
+    assert.equal(inputSizeOf(undefined), INPUT_SIZE);
+    assert.equal(inputSizeOf([]), INPUT_SIZE);
+    assert.equal(inputSizeOf([{ shape: ["batch", 3, "h", "w"] }]), INPUT_SIZE);
+    assert.equal(inputSizeOf([{ shape: [1, 3, 640, 480] }]), INPUT_SIZE, "only square inputs are supported");
+  });
+});
+
+describe("decodeYolox at 640 (YOLOX-M)", () => {
+  it("accepts the 8400 anchors of a 640 model and rejects the 416 layout", () => {
+    const anchors = 80 * 80 + 40 * 40 + 20 * 20;
+    assert.equal(anchors, 8400);
+    const out = new Float32Array(anchors * WIDTH);
+    out[10 * WIDTH + 4] = 0.9;
+    out[10 * WIDTH + 5] = 0.9; // class 0 = person
+    const found = decodeYolox(out, 0.3, 640);
+    assert.equal(found.length, 1);
+    assert.equal(found[0]!.classId, 0);
+    assert.throws(() => decodeYolox(out, 0.3, 416), /unexpected model output size/);
+  });
+});
 
 describe("decodeYolox", () => {
   it("turns grid offsets and log sizes into boxes in pixels, per stride", () => {
@@ -83,9 +111,9 @@ describe("nms", () => {
 });
 
 describe("groupOf and summarize", () => {
-  it("sorts the 80 COCO classes into the three groups that matter at home", () => {
+  it("sorts the 80 COCO classes into the two groups that matter at home", () => {
     assert.equal(groupOf(0), "person");
-    for (const id of [1, 2, 3, 5, 7]) assert.equal(groupOf(id), "vehicle", `class ${id}`);
+    for (const id of [1, 2, 3, 5, 7]) assert.equal(groupOf(id), null, `class ${id} (vehicles are not looked for: the camera is indoors)`);
     for (const id of [14, 15, 16, 17, 18, 19]) assert.equal(groupOf(id), "animal", `class ${id}`);
     for (const id of [4, 6, 8, 24, 56, 79]) assert.equal(groupOf(id), null, `class ${id}`);
   });
@@ -94,7 +122,6 @@ describe("groupOf and summarize", () => {
     const cand = (classId: number, score: number): Candidate => ({ classId, score, box: [0, 0, 1, 1] });
     assert.deepEqual(summarize([cand(2, 0.7), cand(0, 0.5), cand(0, 0.8), cand(16, 0.6), cand(56, 0.99)]), [
       { label: "person", score: 0.8 },
-      { label: "vehicle", score: 0.7 },
       { label: "animal", score: 0.6 },
     ]);
     assert.deepEqual(summarize([]), []);
@@ -133,7 +160,6 @@ describe("summarizeClip", () => {
     assert.deepEqual(times, [...times].sort((a, b) => a - b), "in order");
     assert.deepEqual(result, [
       { label: "person", score: 0.9 },
-      { label: "vehicle", score: 0.6 },
     ]);
   });
 

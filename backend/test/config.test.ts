@@ -70,7 +70,7 @@ describe("loadConfig", () => {
   it("object detection: on by default, the model next to the backend, labels from 40% confidence", () => {
     const cfg = loadConfig(base);
     assert.equal(cfg.detect.enabled, true);
-    assert.match(cfg.detect.modelPath, /models\/yolox_tiny\.onnx$/);
+    assert.match(cfg.detect.modelPath, /models\/yolox_(m|tiny)\.onnx$/, "YOLOX-M, or YOLOX-Tiny on an older install");
     assert.equal(cfg.detect.minScore, 0.4);
     assert.equal(cfg.detect.maxFrames, 5);
     const custom = loadConfig({ ...base, DETECT_ENABLED: "false", DETECT_MODEL: "/opt/m.onnx", DETECT_MIN_SCORE: "60" });

@@ -76,7 +76,7 @@ export function assess(input: HealthInput): Health {
 
   checks.push(
     detection.state === "ready"
-      ? { id: "detection", level: "ok", title: `Object detection is on (${detection.model ?? "model"})`, detail: "New clips are labelled person, vehicle or animal." }
+      ? { id: "detection", level: "ok", title: `Object detection is on (${detection.model ?? "model"})`, detail: "New clips are labelled person or animal." }
       : detection.state === "off"
         ? { id: "detection", level: "info", title: "Object detection is off", detail: "DETECT_ENABLED=false in backend/.env. Clips are recorded on motion only." }
         : { id: "detection", level: "info", title: "Object detection is not available", detail: "The model file or the runtime is missing. Run ./camera.sh fetch-model, then ./camera.sh restart. Clips are recorded on motion only." },

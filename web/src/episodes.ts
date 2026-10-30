@@ -73,7 +73,7 @@ export type ObjectLabel = NonNullable<Clip["objects"]>[number]["label"];
 /** A kind of object, or "none": analysed and nothing recognised. */
 export type ObjectFilter = ObjectLabel | "none";
 
-const ORDER: ObjectLabel[] = ["person", "vehicle", "animal"];
+const ORDER: ObjectLabel[] = ["person", "animal"];
 
 /** Everything recognised in any clip of the episode, in a fixed order. */
 export function episodeLabels(episode: Episode): ObjectLabel[] {
