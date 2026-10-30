@@ -1,0 +1,26 @@
+diff --git a/pkg/xiaomi/miss/cs2/conn.go b/pkg/xiaomi/miss/cs2/conn.go
+index 2c1b395..2362dd3 100644
+--- a/pkg/xiaomi/miss/cs2/conn.go
++++ b/pkg/xiaomi/miss/cs2/conn.go
+@@ -24,7 +24,7 @@ func Dial(host, transport string) (*Conn, error) {
+ 		Conn:  conn,
+ 		isTCP: isTCP,
+ 		channels: [4]*dataChannel{
+-			newDataChannel(0, 10), nil, newDataChannel(250, 100), nil,
++			newDataChannel(0, 10), nil, newDataChannel(250, mediaQueueSize), nil,
+ 		},
+ 	}
+ 	go c.worker()
+@@ -407,6 +407,12 @@ func (c *tcpConn) Write(req []byte) (n int, err error) {
+ 	return
+ }
+ 
++// mediaQueueSize is how many media packets (video frames and small audio packets) may wait for the reader.
++// The stock 100 is only a second or two of stream: one pause of the reader (a burst after Wi-Fi retransmits,
++// a slow consumer) filled it and the whole connection was dropped with "pop buffer is full". Packets are
++// held as they arrive, so a large queue costs memory only while the reader is behind.
++const mediaQueueSize = 4000
++
+ func newDataChannel(pushSize, popSize int) *dataChannel {
+ 	c := &dataChannel{}
+ 	if pushSize > 0 {

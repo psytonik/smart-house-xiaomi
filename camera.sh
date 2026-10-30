@@ -246,14 +246,16 @@ cmd_motor() {
   curl -s -X POST "$GO2RTC_API/api/xiaomi/motor?src=$STREAM&operation=$op" -w "HTTP %{http_code}\n"
 }
 
-# Builds go2rtc v1.9.15 + the Xiaomi pan/tilt motor patch (from go2rtc PR #2531, Xiaomi part only).
+# Builds go2rtc v1.9.15 + two patches: the Xiaomi pan/tilt motor (from go2rtc PR #2531, Xiaomi part only)
+# and a larger media queue in the Xiaomi transport, so a short pause does not drop the camera ("pop buffer is full").
 cmd_build_motor() {
   command -v git >/dev/null || die "нужен git"
   command -v go  >/dev/null || die "нужен Go >= 1.26 (brew install go)"
   [ -f motor-xiaomi.patch ] || die "нет motor-xiaomi.patch"
+  [ -f cs2-queue.patch ]    || die "нет cs2-queue.patch"
   rm -rf src-motor
   git clone --depth 1 --branch v1.9.15 https://github.com/AlexxIT/go2rtc.git src-motor || die "не удалось скачать go2rtc"
-  (cd src-motor && git apply ../motor-xiaomi.patch && CGO_ENABLED=0 go build -ldflags "-s -w" -trimpath -o ../go2rtc-motor) || { rm -rf src-motor; die "сборка не удалась"; }
+  (cd src-motor && git apply ../motor-xiaomi.patch ../cs2-queue.patch && CGO_ENABLED=0 go build -ldflags "-s -w" -trimpath -o ../go2rtc-motor) || { rm -rf src-motor; die "сборка не удалась"; }
   rm -rf src-motor
   say "Собрано: $(pwd)/go2rtc-motor"
 }

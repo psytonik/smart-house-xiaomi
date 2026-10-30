@@ -61,7 +61,7 @@
 | `camera.sh` | запуск и остановка всего приложения |
 | `backend/` | API, запись по движению, пуши ([README](backend/README.md)) |
 | `web/` | веб-приложение ([README](web/README.md)), собирается в `backend/public` |
-| `go2rtc.yaml`, `motor-xiaomi.patch` | поток камеры и патч для поворота |
+| `go2rtc.yaml`, `motor-xiaomi.patch`, `cs2-queue.patch` | поток камеры, патч для поворота и патч увеличенной очереди пакетов (против `cs2: pop buffer is full`) |
 | `docs/` | принятые решения (ADR), исследования ([индекс](docs/README.md)) |
 | `ROADMAP.md` | что сделано и что дальше |
 
