@@ -26,6 +26,9 @@ import { Login } from "./components/Login";
 import { Player, type Mode, type PlayerState } from "./components/Player";
 import { PrivacyOverlay } from "./components/PrivacyOverlay";
 import { SystemPanel } from "./components/SystemPanel";
+import { Vacuum } from "./components/Vacuum";
+import { VacuumPage } from "./components/VacuumPage";
+import { useHash } from "./useHash";
 import { ZoneEditor } from "./components/ZoneEditor";
 
 const MODES: Array<{ id: Mode; label: string; hint: string }> = [
@@ -271,6 +274,7 @@ function Monitor({ onLogout }: { onLogout: () => void }) {
           <JogDial angle={angle} onMove={handleMove} onCapture={capture} capturing={capturing} />
           <p className="hint">Hold a side to keep moving. Arrow keys move the camera and C captures.</p>
           <Lights onAuthError={onLogout} onError={fail} />
+          <Vacuum onAuthError={onLogout} onError={fail} />
         </aside>
 
         <section className="sheet clips" aria-labelledby="clips-title">
@@ -315,5 +319,7 @@ export function App() {
     clearToken();
     setAuthed(false);
   }, []);
-  return authed ? <Monitor onLogout={logout} /> : <Login onDone={() => setAuthed(true)} />;
+  const hash = useHash();
+  if (!authed) return <Login onDone={() => setAuthed(true)} />;
+  return hash === "#/vacuum" ? <VacuumPage onLogout={logout} /> : <Monitor onLogout={logout} />;
 }

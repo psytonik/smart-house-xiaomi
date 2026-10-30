@@ -1109,3 +1109,332 @@ button:disabled {
   border-radius: 4px;
   border: 1px solid var(--line);
 }
+
+/* ---------- vacuum ---------- */
+.vacuum-battery {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.vacuum-status {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+.vacuum-actions {
+  display: flex;
+  gap: 8px;
+}
+.vacuum-actions button {
+  flex: 1;
+}
+
+.vacuum-link {
+  color: var(--muted);
+  font-size: 0.9375rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.vacuum-link:hover {
+  color: var(--text);
+}
+
+/* ---------- vacuum page ---------- */
+.vpage {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.vpage-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.vpage-bar h1 {
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  order: 2;
+}
+.vpage-back {
+  color: var(--muted);
+  text-underline-offset: 3px;
+}
+.vpage-back:hover {
+  color: var(--text);
+}
+.vpage-main {
+  width: min(100%, 520px);
+  margin: 0 auto;
+  padding: 32px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+}
+.vpage-offline {
+  display: grid;
+  gap: 16px;
+  justify-items: start;
+}
+
+/* the round "robot from above" */
+.dial {
+  position: relative;
+  width: min(80vw, 300px);
+  aspect-ratio: 1;
+}
+.dial-ring {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.dial-core {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 4px;
+  padding: 0 18%;
+}
+.dial-value {
+  font-size: clamp(3.5rem, 18vw, 5rem);
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.dial-value span {
+  font-size: 0.4em;
+  color: var(--muted);
+  margin-left: 2px;
+  letter-spacing: 0;
+}
+.dial-state {
+  color: var(--muted);
+  line-height: 1.3;
+}
+/* a dot that circles the ring while the robot is on the move */
+.dial-orbit {
+  position: absolute;
+  inset: 0;
+  animation: dial-spin 7s linear infinite;
+}
+.dial-orbit::before {
+  content: "";
+  position: absolute;
+  top: 1.6%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: var(--text);
+}
+@keyframes dial-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dial-orbit {
+    animation: none;
+  }
+}
+
+.vpage-actions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 12px;
+}
+.vpage-actions button {
+  min-height: 52px;
+  font-size: 1.0625rem;
+}
+.vpage-actions .primary {
+  background: var(--focus);
+  border-color: var(--focus);
+  color: var(--ink);
+  font-weight: 600;
+}
+.vpage-actions .primary:hover:not(:disabled) {
+  border-color: var(--text);
+}
+
+.vpage-facts {
+  width: 100%;
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+.vpage-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.vpage-facts dt {
+  color: var(--muted);
+}
+.vpage-facts dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.plan-box {
+  width: 100%;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+}
+.plan-box button {
+  min-height: 44px;
+  padding: 8px 20px;
+}
+.plan-box button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: default;
+}
+.plan {
+  width: 100%;
+  margin: 0;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+}
+.plan-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  line-height: 0;
+}
+.plan-live {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.plan-trail {
+  fill: none;
+  stroke: var(--focus);
+  stroke-width: 0.8;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.9;
+}
+.plan-robot {
+  fill: #ffb347;
+  stroke: var(--ink);
+  stroke-width: 0.5;
+}
+.plan img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 70dvh;
+  image-rendering: pixelated;
+}
+.plan-problem {
+  margin: 0;
+  color: var(--signal);
+  font-size: 0.875rem;
+  max-width: 44ch;
+  text-align: center;
+}
+.plan-problem:empty {
+  display: none;
+}
+.plan figcaption {
+  color: var(--muted);
+  font-size: 0.875rem;
+  max-width: 44ch;
+  text-align: center;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.vpage-bar h1:focus {
+  outline: none; /* focus moves here to announce the page; it isn't a control */
+}
+
+.vpage-modes {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.vpage-modes button {
+  min-height: 48px;
+  padding: 8px 6px;
+  line-height: 1.2;
+}
+.vpage-modes button[aria-checked="true"] {
+  border-color: var(--focus);
+  background: var(--slate);
+  color: var(--focus);
+  font-weight: 600;
+}
+
+.vpage-care {
+  width: 100%;
+  display: grid;
+  gap: 16px;
+}
+.vpage-care h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+.care-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.care-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+.care-line span:last-child {
+  color: var(--muted);
+}
+.care-worn .care-line span:last-child {
+  color: var(--signal);
+}
+.care-part meter {
+  width: 100%;
+  height: 10px;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+.history-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.history-list time {
+  color: var(--muted);
+}

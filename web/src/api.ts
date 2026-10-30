@@ -306,3 +306,106 @@ export async function resetStream(): Promise<{ otherViewers: number }> {
   if (!res.ok) throw new Error(await errorText(res, "Couldn't reset the stream"));
   return (await res.json()) as { otherViewers: number };
 }
+
+export type VacuumMode = "cleaning" | "paused" | "idle" | "returning" | "charging" | "charged" | "error" | "unknown";
+export type VacuumAction = "start" | "pause" | "dock";
+
+export interface VacuumState {
+  configured: boolean;
+  reachable?: boolean;
+  battery?: number;
+  mode?: VacuumMode;
+  model?: string;
+  firmware?: string;
+  areaM2?: number;
+  minutes?: number;
+  cleaningMode?: CleaningMode;
+}
+
+export async function getVacuum(): Promise<VacuumState> {
+  const res = await api("/api/vacuum");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the vacuum"));
+  return (await res.json()) as VacuumState;
+}
+
+export interface PartWear {
+  percent?: number;
+  hoursLeft?: number;
+}
+
+export interface VacuumCare {
+  mainBrush: PartWear;
+  sideBrush: PartWear;
+  filter: PartWear;
+  totals: { firstCleanAt?: string; minutes?: number; cleanings?: number; areaM2?: number };
+}
+
+/** Brush and filter wear and the lifetime totals. */
+export async function getVacuumCare(): Promise<VacuumCare> {
+  const res = await api("/api/vacuum/care");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the vacuum's parts"));
+  return (await res.json()) as VacuumCare;
+}
+
+export interface CleaningRecord {
+  startedAt: string;
+  minutes: number;
+  areaM2: number;
+}
+
+/** The last cleanings the Xiaomi cloud remembers, newest first. */
+export async function getVacuumHistory(): Promise<CleaningRecord[]> {
+  const res = await api("/api/vacuum/history");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the cleaning history"));
+  return ((await res.json()) as { cleanings: CleaningRecord[] }).cleanings;
+}
+
+export async function sendVacuum(action: VacuumAction): Promise<void> {
+  const res = await api("/api/vacuum", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action }),
+  });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't reach the vacuum"));
+}
+
+/** The floor plan picture, or null when none has been added. `fresh` skips the browser's cached copy. */
+export async function fetchVacuumMap(fresh = false): Promise<Blob | null> {
+  const res = await api("/api/vacuum/map", fresh ? { cache: "no-store" } : undefined);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't load the floor plan"));
+  return res.blob();
+}
+
+/** Asks the backend to redraw the floor plan from the robot's own map. */
+export async function refreshVacuumMap(): Promise<void> {
+  const res = await api("/api/vacuum/map/refresh", { method: "POST" });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't update the floor plan"));
+}
+
+export type VacuumLive = {
+  /** Size of the floor plan in map cells; `robot` and `trail` are positions in the same cells. */
+  map: { width: number; height: number };
+  robot: { x: number; y: number } | null;
+  trail: Array<{ x: number; y: number }>;
+  ageSeconds: number | null;
+  live: boolean;
+};
+
+/** Where the robot is right now, and the trail it just drove. */
+export async function getVacuumLive(): Promise<VacuumLive> {
+  const res = await api("/api/vacuum/live");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the robot's position"));
+  return res.json();
+}
+
+export type CleaningMode = "sweeping" | "mopping" | "both";
+
+export async function sendCleaningMode(mode: CleaningMode): Promise<void> {
+  const res = await api("/api/vacuum/mode", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mode }),
+  });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't change the cleaning mode"));
+}

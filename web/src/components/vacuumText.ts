@@ -1,0 +1,24 @@
+import type { VacuumMode } from "../api";
+
+export const MODE_LABEL: Record<VacuumMode, string> = {
+  cleaning: "Cleaning",
+  paused: "Paused",
+  idle: "Waiting",
+  returning: "Going home",
+  charging: "Charging",
+  charged: "Charged, at the dock",
+  error: "Needs attention, check the robot",
+  unknown: "Status unknown",
+};
+
+/** What the main button does for each state: the label, and the command it sends. */
+export function mainAction(mode: VacuumMode): { label: string; action: "start" | "pause" } {
+  if (mode === "cleaning" || mode === "returning") return { label: "Pause", action: "pause" };
+  return { label: mode === "paused" ? "Resume" : "Start cleaning", action: "start" };
+}
+
+export const CLEANING_MODE_LABEL = {
+  sweeping: "Sweeping",
+  mopping: "Mopping",
+  both: "Sweep and mop",
+} as const;

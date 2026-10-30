@@ -139,6 +139,18 @@ export class PushService {
     }
   }
 
+  /** A plain notification to every device (the vacuum uses it). Never rejects; returns how many devices it went to. */
+  async notify(title: string, body: string, type: string): Promise<number> {
+    const n = this.tokens.length;
+    if (n === 0) return 0;
+    try {
+      await this.deliver((to) => ({ to, title, body, data: { type } }));
+    } catch (e) {
+      this.log(`push: ${e instanceof Error ? e.message : e}`);
+    }
+    return n;
+  }
+
   /** Sends a test notification to every device, ignoring the rate limit. Returns how many devices it went to. */
   async sendTest(): Promise<number> {
     const n = this.tokens.length;
