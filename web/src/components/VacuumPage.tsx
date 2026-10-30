@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AuthError, fetchVacuumMap, getVacuumCare, getVacuumHistory, refreshVacuumMap, type CleaningMode, type CleaningRecord, type PartWear, type VacuumCare } from "../api";
+import { AuthError, fetchVacuumMap, getVacuumCare, getVacuumHistory, refreshVacuumMap, type CleaningMode, type CleaningRecord, type SuctionLevel, type WaterLevel, type PartWear, type VacuumCare } from "../api";
 import { useLivePosition } from "../useLivePosition";
 import { useVacuum } from "../useVacuum";
-import { CLEANING_MODE_LABEL, MODE_LABEL, mainAction } from "./vacuumText";
+import { CLEANING_MODE_LABEL, MODE_LABEL, SUCTION_LABEL, WATER_LABEL, mainAction } from "./vacuumText";
 
 const RADIUS = 100;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -19,7 +19,7 @@ export function VacuumPage({ onLogout }: { onLogout: () => void }) {
   }, []);
   const fail = useCallback((e: unknown) => say(e instanceof Error ? e.message : "Something went wrong"), [say]);
 
-  const { state, busy, act, setMode, reload } = useVacuum(onLogout, fail);
+  const { state, busy, act, setMode, setLevel, reload } = useVacuum(onLogout, fail);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
 
@@ -60,7 +60,7 @@ export function VacuumPage({ onLogout }: { onLogout: () => void }) {
           </section>
         )}
 
-        {state?.reachable && <Dashboard state={state} busy={busy} act={act} setMode={setMode} />}
+        {state?.reachable && <Dashboard state={state} busy={busy} act={act} setMode={setMode} setLevel={setLevel} />}
         {state?.reachable && <Care onAuthError={onLogout} />}
         {state?.reachable && <History onAuthError={onLogout} />}
         {state?.configured && <FloorPlan moving={state.mode === "cleaning" || state.mode === "returning"} onAuthError={onLogout} onError={fail} onNotice={say} />}
@@ -78,11 +78,13 @@ function Dashboard({
   busy,
   act,
   setMode,
+  setLevel,
 }: {
   state: NonNullable<ReturnType<typeof useVacuum>["state"]>;
   busy: boolean;
   act: ReturnType<typeof useVacuum>["act"];
   setMode: ReturnType<typeof useVacuum>["setMode"];
+  setLevel: ReturnType<typeof useVacuum>["setLevel"];
 }) {
   const mode = state.mode ?? "unknown";
   const battery = state.battery ?? 0;
@@ -151,6 +153,35 @@ function Dashboard({
         </div>
       )}
       {state.cleaningMode && moving && <p className="hint">The mode can be changed when the robot isn't cleaning.</p>}
+
+      {state.suction && (
+        <div className="vpage-levels">
+          <p className="vpage-label" id="suction-label">
+            Suction
+          </p>
+          <div className="vpage-modes vpage-suction" role="radiogroup" aria-labelledby="suction-label">
+          {(Object.keys(SUCTION_LABEL) as SuctionLevel[]).map((l) => (
+            <button key={l} type="button" role="radio" aria-checked={state.suction === l} disabled={busy || moving} onClick={() => state.suction !== l && void setLevel("suction", l)}>
+              {SUCTION_LABEL[l]}
+            </button>
+          ))}
+          </div>
+        </div>
+      )}
+      {state.water && (
+        <div className="vpage-levels">
+          <p className="vpage-label" id="water-label">
+            Water
+          </p>
+          <div className="vpage-modes" role="radiogroup" aria-labelledby="water-label">
+          {(Object.keys(WATER_LABEL) as WaterLevel[]).map((l) => (
+            <button key={l} type="button" role="radio" aria-checked={state.water === l} disabled={busy || moving} onClick={() => state.water !== l && void setLevel("water", l)}>
+              {WATER_LABEL[l]}
+            </button>
+          ))}
+          </div>
+        </div>
+      )}
 
       <dl className="vpage-facts">
         {state.areaM2 !== undefined && state.minutes !== undefined && (

@@ -22,3 +22,6 @@ export const CLEANING_MODE_LABEL = {
   mopping: "Mopping",
   both: "Sweep and mop",
 } as const;
+
+export const SUCTION_LABEL = { quiet: "Quiet", standard: "Standard", strong: "Strong", turbo: "Turbo" } as const;
+export const WATER_LABEL = { low: "Low", medium: "Medium", high: "High" } as const;

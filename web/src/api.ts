@@ -310,6 +310,9 @@ export async function resetStream(): Promise<{ otherViewers: number }> {
 export type VacuumMode = "cleaning" | "paused" | "idle" | "returning" | "charging" | "charged" | "error" | "unknown";
 export type VacuumAction = "start" | "pause" | "dock" | "find";
 
+export type SuctionLevel = "quiet" | "standard" | "strong" | "turbo";
+export type WaterLevel = "low" | "medium" | "high";
+
 export interface VacuumState {
   configured: boolean;
   reachable?: boolean;
@@ -320,6 +323,8 @@ export interface VacuumState {
   areaM2?: number;
   minutes?: number;
   cleaningMode?: CleaningMode;
+  suction?: SuctionLevel;
+  water?: WaterLevel;
 }
 
 export async function getVacuum(): Promise<VacuumState> {
@@ -400,6 +405,16 @@ export async function getVacuumLive(): Promise<VacuumLive> {
 }
 
 export type CleaningMode = "sweeping" | "mopping" | "both";
+
+export async function sendSuction(level: SuctionLevel): Promise<void> {
+  const res = await api("/api/vacuum/suction", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ level }) });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't change the suction"));
+}
+
+export async function sendWater(level: WaterLevel): Promise<void> {
+  const res = await api("/api/vacuum/water", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ level }) });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't change the water level"));
+}
 
 export async function sendCleaningMode(mode: CleaningMode): Promise<void> {
   const res = await api("/api/vacuum/mode", {

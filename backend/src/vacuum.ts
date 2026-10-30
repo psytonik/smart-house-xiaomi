@@ -4,6 +4,8 @@ export type VacuumAction = "start" | "pause" | "dock" | "find";
 export type VacuumMode = "cleaning" | "paused" | "idle" | "returning" | "charging" | "charged" | "error" | "unknown";
 
 export type CleaningMode = "sweeping" | "mopping" | "both";
+export type SuctionLevel = "quiet" | "standard" | "strong" | "turbo";
+export type WaterLevel = "low" | "medium" | "high";
 
 export interface VacuumState {
   /** 0..100 */
@@ -16,6 +18,8 @@ export interface VacuumState {
   /** Duration of the current or last cleaning, in minutes. */
   minutes?: number;
   cleaningMode?: CleaningMode;
+  suction?: SuctionLevel;
+  water?: WaterLevel;
 }
 
 /** Dreame MIoT spec: siid 2 is the robot, siid 3 the battery. */
@@ -43,6 +47,13 @@ const MODES: Record<number, VacuumMode> = {
 const CLEANING_MODES: Record<number, CleaningMode> = { 0: "sweeping", 1: "mopping", 2: "both" };
 const CLEANING_MODE_VALUE: Record<CleaningMode, number> = { sweeping: 0, mopping: 1, both: 2 };
 export const CLEANING_MODE_NAMES = Object.keys(CLEANING_MODE_VALUE) as CleaningMode[];
+
+/** Dreame MIoT 4/4 and 4/5. With "Customized Cleaning" on in the app the robot keeps these per room and ignores the general ones. */
+const SUCTION_VALUE: Record<SuctionLevel, number> = { quiet: 0, standard: 1, strong: 2, turbo: 3 };
+const WATER_VALUE: Record<WaterLevel, number> = { low: 1, medium: 2, high: 3 };
+export const SUCTION_NAMES = Object.keys(SUCTION_VALUE) as SuctionLevel[];
+export const WATER_NAMES = Object.keys(WATER_VALUE) as WaterLevel[];
+const nameOf = <T extends string>(table: Record<T, number>, value: number | undefined): T | undefined => (Object.keys(table) as T[]).find((k) => table[k] === value);
 
 export const VACUUM_ACTIONS = Object.keys(ACTIONS) as VacuumAction[];
 
@@ -124,6 +135,8 @@ export class Vacuum {
       { did: "x", siid: 4, piid: 2 }, // cleaning time, minutes
       { did: "x", siid: 4, piid: 3 }, // cleaned area, m²
       { did: "x", siid: 4, piid: 23 }, // cleaning mode
+      { did: "x", siid: 4, piid: 4 }, // suction
+      { did: "x", siid: 4, piid: 5 }, // water
     ])) as Array<{ siid: number; piid: number; code?: number; value?: number }>;
     const value = (siid: number, piid: number) => {
       const v = rows.find((r) => r.siid === siid && r.piid === piid && r.code === 0)?.value;
@@ -140,6 +153,10 @@ export class Vacuum {
     if (minutes !== undefined) state.minutes = minutes;
     if (area !== undefined) state.areaM2 = area;
     if (cleaning !== undefined && CLEANING_MODES[cleaning]) state.cleaningMode = CLEANING_MODES[cleaning];
+    const suction = nameOf(SUCTION_VALUE, value(4, 4));
+    const water = nameOf(WATER_VALUE, value(4, 5));
+    if (suction) state.suction = suction;
+    if (water) state.water = water;
     return state;
   }
 
@@ -185,6 +202,24 @@ export class Vacuum {
       | Array<{ code?: number }>
       | undefined;
     if (!rows?.length || rows.some((r) => r.code !== undefined && r.code !== 0)) throw new MiioError(`the vacuum could not switch to ${mode}`);
+  }
+
+  async setSuction(level: SuctionLevel): Promise<void> {
+    await this.setChecked(4, 4, SUCTION_VALUE[level], `suction ${level}`);
+  }
+
+  async setWater(level: WaterLevel): Promise<void> {
+    await this.setChecked(4, 5, WATER_VALUE[level], `water ${level}`);
+  }
+
+  /** Sets a property and reads it back: a robot using "Customized Cleaning" says yes and keeps its old value. */
+  private async setChecked(siid: number, piid: number, value: number, what: string): Promise<void> {
+    const rows = (await this.device.call("set_properties", [{ did: "x", siid, piid, value }])) as Array<{ code?: number }> | undefined;
+    if (!rows?.length || rows.some((r) => r.code !== undefined && r.code !== 0)) throw new MiioError(`the vacuum could not switch to ${what}`);
+    const back = (await this.device.call("get_properties", [{ did: "x", siid, piid }])) as Array<{ code?: number; value?: number }> | undefined;
+    if (back?.[0]?.code === 0 && back[0].value !== value) {
+      throw new MiioError(`the vacuum kept its old setting instead of ${what}: Customized Cleaning is probably on in the app, and it keeps these per room`);
+    }
   }
 
   /** The cloud file name of the robot's map (property 6/8). Only the name, never the map itself. */

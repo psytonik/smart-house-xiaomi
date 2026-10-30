@@ -7,7 +7,7 @@ import { MiioDevice, MiioError } from "../miio.js";
 import { addDetail, decodeCloudMap, decodeLiveFrame, decodePiece, geometryOf, isGeometry, renderMapPng, routeOf, toCells, VacuumMapError, DEFAULT_COLORS, type MapGeometry, type MapPiece, type Point } from "../vacuumMap.js";
 import { CloudError, deviceData, downloadCloudFile, idsFromObjectName } from "../xiaomiCloud.js";
 import { VacuumWatcher } from "../vacuumWatcher.js";
-import { CLEANING_MODE_NAMES, parseCleaningRecord, Vacuum, VACUUM_ACTIONS, type CleaningMode, type VacuumAction } from "../vacuum.js";
+import { CLEANING_MODE_NAMES, parseCleaningRecord, SUCTION_NAMES, Vacuum, VACUUM_ACTIONS, WATER_NAMES, type CleaningMode, type SuctionLevel, type VacuumAction, type WaterLevel } from "../vacuum.js";
 
 /** Robot vacuum over the local network. Configured with VACUUM_IP and VACUUM_TOKEN (backend/.env). */
 export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.ProcessEnv = process.env): void {
@@ -100,6 +100,27 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
       return { ok: true };
     },
   );
+
+  // Suction and water, as general settings. The answer is 502 with the reason when the robot didn't take the value.
+  for (const [path, names, apply] of [
+    ["suction", SUCTION_NAMES, (v: Vacuum, level: string) => v.setSuction(level as SuctionLevel)],
+    ["water", WATER_NAMES, (v: Vacuum, level: string) => v.setWater(level as WaterLevel)],
+  ] as const) {
+    app.post<{ Body: { level: string } }>(
+      `/api/vacuum/${path}`,
+      { schema: { body: { type: "object", additionalProperties: false, required: ["level"], properties: { level: { type: "string", enum: names } } } } },
+      async (req) => {
+        if (!vacuum) throw new HttpError(404, "vacuum is not configured (set VACUUM_IP and VACUUM_TOKEN)");
+        try {
+          await apply(vacuum, req.body.level);
+        } catch (e) {
+          if (e instanceof MiioError) throw new HttpError(502, e.message);
+          throw e;
+        }
+        return { ok: true };
+      },
+    );
+  }
 
   // The floor plan. vacuum-map-live.png is drawn from the robot's own map (tools/xiaomi-cloud.ts map); if it is not
   // there, a picture you put in the data dir (vacuum-map.png) is used. Private like everything under /api.

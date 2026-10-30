@@ -3,13 +3,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api";
 import { FloorPlan, VacuumPage } from "./VacuumPage";
 
-vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getVacuum: vi.fn(), sendVacuum: vi.fn(), fetchVacuumMap: vi.fn(), refreshVacuumMap: vi.fn(), getVacuumLive: vi.fn(), sendCleaningMode: vi.fn(), getVacuumCare: vi.fn(), getVacuumHistory: vi.fn() }));
+vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getVacuum: vi.fn(), sendVacuum: vi.fn(), fetchVacuumMap: vi.fn(), refreshVacuumMap: vi.fn(), getVacuumLive: vi.fn(), sendCleaningMode: vi.fn(), getVacuumCare: vi.fn(), getVacuumHistory: vi.fn(), sendSuction: vi.fn(), sendWater: vi.fn() }));
 
 describe("VacuumPage", () => {
   beforeEach(() => {
     vi.mocked(api.sendVacuum).mockResolvedValue();
     vi.mocked(api.fetchVacuumMap).mockResolvedValue(null);
     vi.mocked(api.sendCleaningMode).mockResolvedValue();
+    vi.mocked(api.sendSuction).mockResolvedValue();
+    vi.mocked(api.sendWater).mockResolvedValue();
     vi.mocked(api.getVacuumCare).mockRejectedValue(new Error("no care"));
     vi.mocked(api.getVacuumHistory).mockRejectedValue(new Error("no history"));
     vi.mocked(api.refreshVacuumMap).mockResolvedValue();
@@ -92,6 +94,36 @@ describe("VacuumPage", () => {
     render(<VacuumPage onLogout={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "Pause" }));
     await waitFor(() => expect(api.sendVacuum).toHaveBeenCalledWith("pause"));
+  });
+
+  it("shows suction and water and changes them, and says why when the robot keeps its own", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle", suction: "turbo", water: "high" });
+    render(<VacuumPage onLogout={() => {}} />);
+    const suction = await screen.findByRole("radiogroup", { name: "Suction" });
+    const water = screen.getByRole("radiogroup", { name: "Water" });
+    expect(suction.querySelector('[aria-checked="true"]')?.textContent).toBe("Turbo");
+    expect(water.querySelector('[aria-checked="true"]')?.textContent).toBe("High");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Quiet" }));
+    await waitFor(() => expect(api.sendSuction).toHaveBeenCalledWith("quiet"));
+    fireEvent.click(screen.getByRole("radio", { name: "Low" }));
+    await waitFor(() => expect(api.sendWater).toHaveBeenCalledWith("low"));
+
+    vi.mocked(api.sendWater).mockRejectedValue(new Error("the vacuum kept its old setting: Customized Cleaning is probably on"));
+    fireEvent.click(screen.getByRole("radio", { name: "Medium" }));
+    expect(await screen.findByText(/Customized Cleaning is probably on/)).toBeTruthy();
+  });
+
+  it("leaves suction and water out when the robot doesn't report them, and locks them while it cleans", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    render(<VacuumPage onLogout={() => {}} />);
+    await screen.findByText("Waiting");
+    expect(screen.queryByRole("radiogroup", { name: "Suction" })).toBeNull();
+
+    cleanup();
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "cleaning", suction: "strong", water: "medium" });
+    render(<VacuumPage onLogout={() => {}} />);
+    expect(((await screen.findByRole("radio", { name: "Turbo" })) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("makes the robot call out so it can be found", async () => {

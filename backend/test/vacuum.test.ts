@@ -98,6 +98,9 @@ describe("vacuum API (mock device)", () => {
   let fail = false;
   let extras = true;
   let cleaning = 2;
+  let suction = 1;
+  let water = 2;
+  let keepsOldLevels = false; // like a robot with Customized Cleaning on: says yes, keeps its value
   let mapName: string | undefined = "1/2/9";
   let cloud: Awaited<ReturnType<typeof startFakeCloud>>;
   const liveRows: Array<{ time: number; value: string }> = [];
@@ -109,14 +112,16 @@ describe("vacuum API (mock device)", () => {
   before(async () => {
     fake = await fakeVacuum((method, params) => {
       if (method === "get_properties") {
-        const values: Record<string, number | string> = { ...(mapName ? { "6/8": JSON.stringify({ object_name: mapName, md5: "x" }) } : {}), "3/1": 78, "2/1": status, ...(extras ? { "9/1": 241, "9/2": 80, "10/1": 141, "10/2": 70, "11/1": 61, "11/2": 91, "12/1": 1705943812, "12/2": 2789, "12/3": 158, "12/4": 1420 } : {}), ...(extras ? { "4/2": 4, "4/3": 5, "4/23": cleaning } : {}) };
+        const values: Record<string, number | string> = { ...(mapName ? { "6/8": JSON.stringify({ object_name: mapName, md5: "x" }) } : {}), "3/1": 78, "2/1": status, ...(extras ? { "9/1": 241, "9/2": 80, "10/1": 141, "10/2": 70, "11/1": 61, "11/2": 91, "12/1": 1705943812, "12/2": 2789, "12/3": 158, "12/4": 1420 } : {}), ...(extras ? { "4/2": 4, "4/3": 5, "4/23": cleaning, "4/4": suction, "4/5": water } : {}) };
         return { result: params.map((q: { siid: number; piid: number }) => (values[`${q.siid}/${q.piid}`] === undefined ? { ...q, code: -1 } : { ...q, code: 0, value: values[`${q.siid}/${q.piid}`] })) };
       }
       if (method === "miIO.info") return { result: { model: "dreame.vacuum.p2028a", fw_ver: "4.1.8_1156", mac: "AA:BB:CC:DD:EE:FF" } };
       if (method === "set_properties") {
         sets.push(params);
         if (fail) return { result: params.map((q: object) => ({ ...q, code: -1 })) };
-        cleaning = params[0].value;
+        if (params[0].piid === 23) cleaning = params[0].value;
+        else if (!keepsOldLevels && params[0].piid === 4) suction = params[0].value;
+        else if (!keepsOldLevels && params[0].piid === 5) water = params[0].value;
         return { result: params.map((q: object) => ({ ...q, code: 0 })) };
       }
       if (method === "action") {
@@ -188,7 +193,7 @@ describe("vacuum API (mock device)", () => {
 
   it("reports battery and a readable state", async () => {
     const res = await app.inject({ url: "/api/vacuum", headers: auth });
-    assert.deepEqual(res.json(), { configured: true, reachable: true, battery: 78, mode: "charging", statusCode: 6, areaM2: 5, minutes: 4, cleaningMode: "both", model: "dreame.vacuum.p2028a", firmware: "4.1.8_1156" });
+    assert.deepEqual(res.json(), { configured: true, reachable: true, battery: 78, mode: "charging", statusCode: 6, areaM2: 5, minutes: 4, cleaningMode: "both", suction: "standard", water: "medium", model: "dreame.vacuum.p2028a", firmware: "4.1.8_1156" });
     status = 13;
     assert.equal((await app.inject({ url: "/api/vacuum", headers: auth })).json().mode, "charged");
     status = 99;
@@ -227,6 +232,40 @@ describe("vacuum API (mock device)", () => {
     assert.equal((await app.inject({ url: "/api/vacuum", headers: auth })).json().cleaningMode, "mopping");
     await app.inject({ method: "POST", url: "/api/vacuum/mode", headers: auth, payload: { mode: "both" } });
     assert.equal((await app.inject({ url: "/api/vacuum", headers: auth })).json().cleaningMode, "both");
+  });
+
+  it("reports suction and water, and changes them", async () => {
+    const first = (await app.inject({ url: "/api/vacuum", headers: auth })).json();
+    assert.equal(first.suction, "standard");
+    assert.equal(first.water, "medium");
+    let res = await app.inject({ method: "POST", url: "/api/vacuum/suction", headers: auth, payload: { level: "turbo" } });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(sets.at(-1), [{ did: "x", siid: 4, piid: 4, value: 3 }]);
+    res = await app.inject({ method: "POST", url: "/api/vacuum/water", headers: auth, payload: { level: "low" } });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(sets.at(-1), [{ did: "x", siid: 4, piid: 5, value: 1 }]);
+    const now = (await app.inject({ url: "/api/vacuum", headers: auth })).json();
+    assert.equal(now.suction, "turbo");
+    assert.equal(now.water, "low");
+  });
+
+  it("says so when the robot keeps its old suction, as it does with Customized Cleaning on", async () => {
+    keepsOldLevels = true;
+    try {
+      const res = await app.inject({ method: "POST", url: "/api/vacuum/suction", headers: auth, payload: { level: "quiet" } });
+      assert.equal(res.statusCode, 502);
+      assert.match(res.json().error, /Customized Cleaning/);
+    } finally {
+      keepsOldLevels = false;
+    }
+  });
+
+  it("needs the token and known levels for suction and water", async () => {
+    assert.equal((await app.inject({ method: "POST", url: "/api/vacuum/suction", payload: { level: "turbo" } })).statusCode, 401);
+    for (const [url, payload] of [["suction", { level: "max" }], ["suction", {}], ["water", { level: "turbo" }], ["water", { level: 3 }]] as const) {
+      const res = await app.inject({ method: "POST", url: `/api/vacuum/${url}`, headers: auth, payload });
+      assert.equal(res.statusCode, 400, `${url} ${JSON.stringify(payload)}`);
+    }
   });
 
   it("needs the token and a known mode for the cleaning mode", async () => {

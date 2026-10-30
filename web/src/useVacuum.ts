@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { AuthError, getVacuum, sendCleaningMode, sendVacuum, type CleaningMode, type VacuumAction, type VacuumState } from "./api";
+import { AuthError, getVacuum, sendCleaningMode, sendSuction, sendVacuum, sendWater, type CleaningMode, type SuctionLevel, type VacuumAction, type VacuumState, type WaterLevel } from "./api";
 
 /** The vacuum's state (refreshed every 10 s) and a way to send it a command. Shared by the card and the page. */
 export function useVacuum(onAuthError: () => void, onError: (e: unknown) => void) {
@@ -53,5 +53,22 @@ export function useVacuum(onAuthError: () => void, onError: (e: unknown) => void
     [load, onAuthError, onError],
   );
 
-  return { state, busy, act, setMode, reload: load };
+  /** Suction or water. The answer says why when the robot didn't take it (Customized Cleaning), and the page shows what the robot really has. */
+  const setLevel = useCallback(
+    async (kind: "suction" | "water", level: SuctionLevel | WaterLevel) => {
+      setBusy(true);
+      try {
+        await (kind === "suction" ? sendSuction(level as SuctionLevel) : sendWater(level as WaterLevel));
+      } catch (e) {
+        if (e instanceof AuthError) onAuthError();
+        else onError(e);
+      } finally {
+        setBusy(false);
+        load();
+      }
+    },
+    [load, onAuthError, onError],
+  );
+
+  return { state, busy, act, setMode, setLevel, reload: load };
 }
