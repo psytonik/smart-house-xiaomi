@@ -94,6 +94,13 @@ describe("VacuumPage", () => {
     await waitFor(() => expect(api.sendVacuum).toHaveBeenCalledWith("pause"));
   });
 
+  it("makes the robot call out so it can be found", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    render(<VacuumPage onLogout={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Find the robot" }));
+    await waitFor(() => expect(api.sendVacuum).toHaveBeenCalledWith("find"));
+  });
+
   it("offers Resume after a pause", async () => {
     vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 60, mode: "paused" });
     render(<VacuumPage onLogout={() => {}} />);

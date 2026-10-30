@@ -1438,3 +1438,9 @@ button:disabled {
 .history-list time {
   color: var(--muted);
 }
+
+.vpage-actions .vpage-find {
+  grid-column: 1 / -1;
+  min-height: 44px;
+  font-size: 1rem;
+}

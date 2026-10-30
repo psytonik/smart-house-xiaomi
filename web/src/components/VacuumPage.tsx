@@ -129,6 +129,9 @@ function Dashboard({
         <button type="button" onClick={() => void act("dock")} disabled={busy || docked}>
           Go home
         </button>
+        <button type="button" className="vpage-find" onClick={() => void act("find")} disabled={busy}>
+          Find the robot
+        </button>
       </div>
 
       {state.cleaningMode && (

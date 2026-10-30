@@ -308,7 +308,7 @@ export async function resetStream(): Promise<{ otherViewers: number }> {
 }
 
 export type VacuumMode = "cleaning" | "paused" | "idle" | "returning" | "charging" | "charged" | "error" | "unknown";
-export type VacuumAction = "start" | "pause" | "dock";
+export type VacuumAction = "start" | "pause" | "dock" | "find";
 
 export interface VacuumState {
   configured: boolean;

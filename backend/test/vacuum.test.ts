@@ -205,12 +205,12 @@ describe("vacuum API (mock device)", () => {
     assert.ok(!("areaM2" in body) && !("minutes" in body) && !("cleaningMode" in body));
   });
 
-  it("starts, pauses and sends the robot home", async () => {
-    for (const action of ["start", "pause", "dock"]) {
+  it("starts, pauses, sends the robot home and makes it call out", async () => {
+    for (const action of ["start", "pause", "dock", "find"]) {
       const res = await app.inject({ method: "POST", url: "/api/vacuum", headers: auth, payload: { action } });
       assert.equal(res.statusCode, 200, action);
     }
-    assert.deepEqual(actions.map((a) => [a.siid, a.aiid]), [[2, 1], [2, 2], [3, 1]]);
+    assert.deepEqual(actions.map((a) => [a.siid, a.aiid]), [[2, 1], [2, 2], [3, 1], [7, 1]]);
   });
 
   it("refuses anything that is not a known action", async () => {

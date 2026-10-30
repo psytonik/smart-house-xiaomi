@@ -1,6 +1,6 @@
 import { MiioDevice, MiioError } from "./miio.js";
 
-export type VacuumAction = "start" | "pause" | "dock";
+export type VacuumAction = "start" | "pause" | "dock" | "find";
 export type VacuumMode = "cleaning" | "paused" | "idle" | "returning" | "charging" | "charged" | "error" | "unknown";
 
 export type CleaningMode = "sweeping" | "mopping" | "both";
@@ -23,6 +23,8 @@ const ACTIONS: Record<VacuumAction, { siid: number; aiid: number }> = {
   start: { siid: 2, aiid: 1 },
   pause: { siid: 2, aiid: 2 },
   dock: { siid: 3, aiid: 1 },
+  /** Makes the robot say "I'm here", to find it under a sofa. */
+  find: { siid: 7, aiid: 1 },
 };
 
 const MODES: Record<number, VacuumMode> = {
