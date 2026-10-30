@@ -161,7 +161,7 @@ function Dashboard({
           </p>
           <div className="vpage-modes vpage-suction" role="radiogroup" aria-labelledby="suction-label">
           {(Object.keys(SUCTION_LABEL) as SuctionLevel[]).map((l) => (
-            <button key={l} type="button" role="radio" aria-checked={state.suction === l} disabled={busy || moving} onClick={() => state.suction !== l && void setLevel("suction", l)}>
+            <button key={l} type="button" role="radio" aria-checked={state.suction === l} disabled={busy} onClick={() => state.suction !== l && void setLevel("suction", l)}>
               {SUCTION_LABEL[l]}
             </button>
           ))}
@@ -175,13 +175,14 @@ function Dashboard({
           </p>
           <div className="vpage-modes" role="radiogroup" aria-labelledby="water-label">
           {(Object.keys(WATER_LABEL) as WaterLevel[]).map((l) => (
-            <button key={l} type="button" role="radio" aria-checked={state.water === l} disabled={busy || moving} onClick={() => state.water !== l && void setLevel("water", l)}>
+            <button key={l} type="button" role="radio" aria-checked={state.water === l} disabled={busy} onClick={() => state.water !== l && void setLevel("water", l)}>
               {WATER_LABEL[l]}
             </button>
           ))}
           </div>
         </div>
       )}
+      {(state.suction || state.water) && <p className="hint">The robot resets suction and water to the maximum at every start, so your choice is put back a few seconds after it begins.</p>}
 
       <dl className="vpage-facts">
         {state.areaM2 !== undefined && state.minutes !== undefined && (

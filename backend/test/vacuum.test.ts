@@ -134,6 +134,7 @@ describe("vacuum API (mock device)", () => {
     process.env.VACUUM_TOKEN = TOKEN_HEX;
     process.env.VACUUM_PORT = String(fake.port);
     process.env.VACUUM_MAP_POKE_MS = "200";
+    process.env.VACUUM_LEVELS_DELAY_MS = "30";
     dir = mkdtempSync(join(tmpdir(), "vacuum-test-"));
     cloud = await startFakeCloud(cloudSession, { "1/2/9": cloudMapFile({ width: 6, height: 5, cells: [0, 0, 0, 0, 0, 0, 0, 129, 129, 129, 129, 0, 0, 129, 1, 1, 129, 0, 0, 129, 129, 129, 129, 0, 0, 0, 0, 0, 0, 0], name: "Test home" }) }, { "6.1": liveRows, "4.1": eventRows });
     process.env.XIAOMI_CLOUD_BASE = cloud.base;
@@ -146,7 +147,7 @@ describe("vacuum API (mock device)", () => {
     delete process.env.XIAOMI_CLOUD_BASE;
     fake.sock.close();
     rmSync(dir, { recursive: true, force: true });
-    for (const k of ["VACUUM_IP", "VACUUM_TOKEN", "VACUUM_PORT", "VACUUM_MAP_POKE_MS"]) {
+    for (const k of ["VACUUM_IP", "VACUUM_TOKEN", "VACUUM_PORT", "VACUUM_MAP_POKE_MS", "VACUUM_LEVELS_DELAY_MS"]) {
       if (saved[k] === undefined) delete process.env[k];
       else process.env[k] = saved[k];
     }
@@ -249,10 +250,21 @@ describe("vacuum API (mock device)", () => {
     assert.equal(now.water, "low");
   });
 
+  it("puts the chosen suction back after a start, because the robot resets it to the maximum", async () => {
+    await app.inject({ method: "POST", url: "/api/vacuum/suction", headers: auth, payload: { level: "quiet" } });
+    suction = 3; // what the robot does when a cleaning starts
+    const before = sets.length;
+    const res = await app.inject({ method: "POST", url: "/api/vacuum", headers: auth, payload: { action: "start" } });
+    assert.equal(res.statusCode, 200);
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(sets.slice(before), [[{ did: "x", siid: 4, piid: 4, value: 0 }]]);
+    assert.equal(suction, 0);
+  });
+
   it("says so when the robot keeps its old suction, as it does with Customized Cleaning on", async () => {
     keepsOldLevels = true;
     try {
-      const res = await app.inject({ method: "POST", url: "/api/vacuum/suction", headers: auth, payload: { level: "quiet" } });
+      const res = await app.inject({ method: "POST", url: "/api/vacuum/suction", headers: auth, payload: { level: "turbo" } }); // the robot is at quiet after the previous test
       assert.equal(res.statusCode, 502);
       assert.match(res.json().error, /Customized Cleaning/);
     } finally {

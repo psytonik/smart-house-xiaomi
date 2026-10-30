@@ -59,6 +59,28 @@ describe("VacuumWatcher", () => {
     assert.equal(sent.length, 1, "sitting on the dock is not news");
   });
 
+  it("calls for a start only when a cleaning begins, not on a resume or at the first look", async () => {
+    let starts = 0;
+    const w = new VacuumWatcher(
+      { state: async () => state as VacuumState, care: async () => good },
+      { notify: async () => undefined },
+      { dataDir: dir, intervalMs: 60_000, now: () => clock, onCleaningStart: async () => void starts++ },
+    );
+    state = at("cleaning");
+    await w.tick();
+    assert.equal(starts, 0, "the server may start in the middle of a cleaning");
+    state = at("charged");
+    await w.tick();
+    state = at("cleaning");
+    await w.tick();
+    assert.equal(starts, 1);
+    state = at("paused");
+    await w.tick();
+    state = at("cleaning");
+    await w.tick();
+    assert.equal(starts, 1, "resuming is not a start");
+  });
+
   it("stays quiet about a robot that just sits on the dock", async () => {
     const w = watcher();
     for (const mode of ["charging", "charged", "charging"] as const) {

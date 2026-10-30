@@ -23,6 +23,8 @@ export interface WatcherOptions {
   intervalMs: number;
   now?: () => number;
   log?: (message: string) => void;
+  /** Called when a cleaning has just begun (a start, not a resume after a pause). */
+  onCleaningStart?: () => Promise<void>;
 }
 
 /**
@@ -99,6 +101,7 @@ export class VacuumWatcher {
     const before = this.previous;
     this.previous = mode;
 
+    if (mode === "cleaning" && before !== undefined && before !== "cleaning" && before !== "paused") await this.opts.onCleaningStart?.().catch(() => undefined);
     if (mode === "cleaning") this.worked = true;
     if (this.worked && DOCKED.has(mode) && before !== undefined && !DOCKED.has(before)) {
       this.worked = false;

@@ -6,6 +6,7 @@ import { HttpError } from "../go2rtc.js";
 import { MiioDevice, MiioError } from "../miio.js";
 import { addDetail, decodeCloudMap, decodeLiveFrame, decodePiece, geometryOf, isGeometry, renderMapPng, routeOf, toCells, VacuumMapError, DEFAULT_COLORS, type MapGeometry, type MapPiece, type Point } from "../vacuumMap.js";
 import { CloudError, deviceData, downloadCloudFile, idsFromObjectName } from "../xiaomiCloud.js";
+import { LevelKeeper } from "../vacuumLevels.js";
 import { VacuumWatcher } from "../vacuumWatcher.js";
 import { CLEANING_MODE_NAMES, parseCleaningRecord, SUCTION_NAMES, Vacuum, VACUUM_ACTIONS, WATER_NAMES, type CleaningMode, type SuctionLevel, type VacuumAction, type WaterLevel } from "../vacuum.js";
 
@@ -22,11 +23,15 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
     }
   }
 
+  // The suction and water chosen in the web app are put back after a cleaning starts (the robot resets them to the maximum).
+  const levels = vacuum ? new LevelKeeper(vacuum, ctx.cfg.dataDir, (m) => app.log.info(m)) : undefined;
+  const afterStartMs = Number(env.VACUUM_LEVELS_DELAY_MS ?? 5000);
+
   // Pushes about the robot (cleaning done, trouble, worn parts). VACUUM_WATCH_MS is how often it looks; 0 turns it off.
   if (vacuum) {
     const every = Number(env.VACUUM_WATCH_MS ?? 60_000);
     if (Number.isFinite(every) && every > 0) {
-      const watcher = new VacuumWatcher(vacuum, ctx.push, { dataDir: ctx.cfg.dataDir, intervalMs: every, log: (m) => app.log.info(m) });
+      const watcher = new VacuumWatcher(vacuum, ctx.push, { dataDir: ctx.cfg.dataDir, intervalMs: every, log: (m) => app.log.info(m), onCleaningStart: () => levels?.apply() ?? Promise.resolve() });
       watcher.start();
       app.addHook("onClose", async () => watcher.stop());
     }
@@ -73,6 +78,7 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
         if (e instanceof MiioError) throw new HttpError(502, e.message);
         throw e;
       }
+      if (req.body.action === "start") levels?.afterStart(afterStartMs);
       return { ok: true };
     },
   );
@@ -106,6 +112,7 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
     ["suction", SUCTION_NAMES, (v: Vacuum, level: string) => v.setSuction(level as SuctionLevel)],
     ["water", WATER_NAMES, (v: Vacuum, level: string) => v.setWater(level as WaterLevel)],
   ] as const) {
+    const key = path;
     app.post<{ Body: { level: string } }>(
       `/api/vacuum/${path}`,
       { schema: { body: { type: "object", additionalProperties: false, required: ["level"], properties: { level: { type: "string", enum: names } } } } },
@@ -117,6 +124,7 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
           if (e instanceof MiioError) throw new HttpError(502, e.message);
           throw e;
         }
+        levels?.remember({ [key]: req.body.level });
         return { ok: true };
       },
     );

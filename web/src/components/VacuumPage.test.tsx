@@ -114,7 +114,7 @@ describe("VacuumPage", () => {
     expect(await screen.findByText(/Customized Cleaning is probably on/)).toBeTruthy();
   });
 
-  it("leaves suction and water out when the robot doesn't report them, and locks them while it cleans", async () => {
+  it("leaves suction and water out when the robot doesn't report them, and lets them be changed while it cleans (it resets them to the maximum when a cleaning starts)", async () => {
     vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
     render(<VacuumPage onLogout={() => {}} />);
     await screen.findByText("Waiting");
@@ -123,7 +123,9 @@ describe("VacuumPage", () => {
     cleanup();
     vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "cleaning", suction: "strong", water: "medium" });
     render(<VacuumPage onLogout={() => {}} />);
-    expect(((await screen.findByRole("radio", { name: "Turbo" })) as HTMLButtonElement).disabled).toBe(true);
+    expect(((await screen.findByRole("radio", { name: "Turbo" })) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("radio", { name: "Quiet" }));
+    await waitFor(() => expect(api.sendSuction).toHaveBeenCalledWith("quiet"));
   });
 
   it("makes the robot call out so it can be found", async () => {
