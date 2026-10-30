@@ -43,7 +43,7 @@
 - Проверить HLS после правки `mp4` (fMP4 для H.265). WebRTC уже работает.
 - Подобрать `MOTION_THRESHOLD` на реальной сцене (сейчас 1.2).
 - Разобраться с потерями пакетов (`cs2: pop buffer is full`): патч go2rtc уже не рвёт соединение (ADR 0015); осталось понаблюдать, найти, что застревает у читателя очереди, и при необходимости снизить битрейт в Xiaomi Home, проверить Wi-Fi камеры, подключить Mac по кабелю.
-- Автозапуск go2rtc и бэкенда при старте Mac (launchd).
+- Автозапуск через launchd написан (`./camera.sh autostart install|uninstall|status`, LaunchAgent `com.psytonik.xiaomi-camera` запускает `./camera.sh run`: go2rtc, бэкенд и Bluetooth-помощник, если упал любой из первых двух, всё поднимается заново; лог `logs/launchd.log`). Plist собирается и проходит `plutil -lint`, но вживую не проверено: запуск при входе в систему, перезапуск после падения, Bluetooth-помощник под launchd (доступ к Bluetooth у агента может не выдаться). После обновления node через nvm выполнить `autostart install` ещё раз (путь к node записан в plist).
 
 
 ## Bluetooth-лампы: что осталось сделать

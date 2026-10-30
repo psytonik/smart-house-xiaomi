@@ -13,6 +13,8 @@
 #   ./camera.sh fetch-model  download the object detection model (YOLOX-Tiny, ~20 MB, Apache-2.0) once
 #   ./camera.sh label-clips  label older clips with person / vehicle / animal (after fetch-model)
 #   ./camera.sh ble-setup    one-time setup of the Bluetooth helper for the Lotus Lantern strip (run from Terminal.app)
+#   ./camera.sh autostart install|uninstall|status   start everything at login via launchd, restart it if a service dies
+#   ./camera.sh run          start everything and supervise it in the foreground (what launchd runs; exits 1 if a service dies)
 #
 # Safe to run twice: a service that is already running (even one you started in another terminal) is
 # reused and left alone; only services started by this script are stopped by it.
@@ -193,6 +195,98 @@ summary() {
   say ""
 }
 
+# ---------------------------------------------------------------- launchd
+
+AGENT_LABEL=com.psytonik.xiaomi-camera
+AGENT_PLIST="$HOME/Library/LaunchAgents/$AGENT_LABEL.plist"
+AGENT_DOMAIN="gui/$(id -u)"
+
+# What launchd runs. Starts everything, then watches: if go2rtc or the backend dies, stop the rest and exit 1,
+# so launchd (KeepAlive) starts a clean set again. SIGTERM (launchctl bootout) is a normal stop, exit 0.
+cmd_run() {
+  up
+  summary
+  local stop=0 name
+  trap 'stop=1' INT TERM
+  while [ "$stop" -eq 0 ]; do
+    for name in go2rtc backend; do
+      if [ -f "$RUN/$name.pid" ] && ! is_ours "$name"; then
+        warn "$name неожиданно завершился, перезапускаю всё"
+        tail -n 15 "$LOGS/$name.log" >&2
+        stop_all
+        exit 1
+      fi
+    done
+    sleep 2 &
+    wait $!
+  done
+  trap - INT TERM
+  stop_all
+}
+
+xml_escape() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+cmd_autostart() {
+  local here; here=$(pwd)
+  case "${1:-status}" in
+    install)
+      command -v node >/dev/null || die "не найден node"
+      [ -f backend/.env ] && [ -x ./go2rtc-motor ] || die "сначала настройте приложение и проверьте, что ./camera.sh up работает"
+      # launchd gives a bare PATH: pass the node that works here now (nvm paths change when node is upgraded: run install again)
+      local path_env; path_env="$(dirname "$(command -v node)"):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      mkdir -p "$HOME/Library/LaunchAgents" "$LOGS" "$RUN"
+      cat > "$AGENT_PLIST" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$AGENT_LABEL</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>$(xml_escape "$here")/camera.sh</string>
+    <string>run</string>
+  </array>
+  <key>WorkingDirectory</key><string>$(xml_escape "$here")</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>$(xml_escape "$path_env")</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>ThrottleInterval</key><integer>20</integer>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>$(xml_escape "$here")/$LOGS/launchd.log</string>
+  <key>StandardErrorPath</key><string>$(xml_escape "$here")/$LOGS/launchd.log</string>
+</dict>
+</plist>
+PLIST
+      plutil -lint "$AGENT_PLIST" >/dev/null || { rm -f "$AGENT_PLIST"; die "plist получился неверный, он удалён"; }
+      say "Записан $AGENT_PLIST"
+      if is_ours go2rtc || is_ours backend; then
+        say "Сейчас часть сервисов запущена этим скриптом из терминала. Остановите их (./camera.sh stop) и запустите агента:"
+        say "  launchctl bootstrap $AGENT_DOMAIN $AGENT_PLIST"
+        return
+      fi
+      launchctl bootout "$AGENT_DOMAIN/$AGENT_LABEL" 2>/dev/null
+      launchctl bootstrap "$AGENT_DOMAIN" "$AGENT_PLIST" || die "launchctl bootstrap не удался"
+      say "Автозапуск включён: всё стартует при входе в систему и перезапускается, если упадёт. Лог: $LOGS/launchd.log"
+      ;;
+    uninstall)
+      launchctl bootout "$AGENT_DOMAIN/$AGENT_LABEL" 2>/dev/null
+      rm -f "$AGENT_PLIST"
+      say "Автозапуск выключен. Сервисы, которые ещё работают, проверьте командой ./camera.sh status"
+      ;;
+    status)
+      [ -f "$AGENT_PLIST" ] && say "plist: $AGENT_PLIST" || say "plist: нет (автозапуск не установлен)"
+      if launchctl print "$AGENT_DOMAIN/$AGENT_LABEL" >/dev/null 2>&1; then
+        launchctl print "$AGENT_DOMAIN/$AGENT_LABEL" | grep -E '^\s*(state|pid|runs|last exit code) ='
+      else
+        say "launchd: агент не загружен"
+      fi
+      ;;
+    *) die "использование: ./camera.sh autostart install|uninstall|status" ;;
+  esac
+}
+
 # ---------------------------------------------------------------- commands
 
 cmd_start() {
@@ -321,6 +415,8 @@ case "${1:-start}" in
   fetch-model)   cmd_fetch_model ;;
   label-clips)   cmd_label_clips ;;
   ble-setup)     cmd_ble_setup ;;
-  -h|--help|help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' ;;
+  run)           cmd_run ;;
+  autostart)     cmd_autostart "${2:-status}" ;;
+  -h|--help|help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' ;;
   *)             die "неизвестная команда: $1 (./camera.sh help)" ;;
 esac
