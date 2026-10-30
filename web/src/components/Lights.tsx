@@ -6,6 +6,13 @@ interface Props {
   onError: (e: unknown) => void;
 }
 
+/** One line of plain words for a lamp's status, so it never depends on the dot's colour. */
+function lampState(l: Lamp): string {
+  if (!l.reachable) return l.kind === "bluetooth" ? "Not answering (is the Bluetooth helper running?)" : "Not answering";
+  const note = l.stateKnown ? "" : " (last sent)";
+  return l.on ? `On, ${l.brightness ?? 0}%${note}` : `Off${note}`;
+}
+
 /**
  * All lamps (Wi-Fi and Bluetooth) behind one set of controls: a change goes to every lamp that answers.
  * The picture shown is the first reachable lamp that reports its state. Renders nothing without lamps.
@@ -115,12 +122,21 @@ export function Lights({ onAuthError, onError }: Props) {
           {view.on ? "On" : "Off"}
         </button>
       </div>
-      <p className="hint">{reachable.map((l) => l.name).join(" and ")}</p>
+      <ul className="lamp-status" aria-label="Lamp status">
+        {lamps.map((l) => (
+          <li key={l.id} className={l.reachable ? (l.on ? "on" : "off") : "down"}>
+            <span className="dot" aria-hidden="true" />
+            <span className="lamp-name">{l.name}</span>
+            <span className="lamp-state">{lampState(l)}</span>
+            {l.reachable && l.on && <span className="lamp-swatch" style={{ background: `hsl(${l.hue ?? 0} ${Math.max(l.saturation ?? 100, 25)}% 55%)` }} aria-hidden="true" />}
+          </li>
+        ))}
+      </ul>
       {slider("brightness", "Brightness", view.brightness ?? 0, 100)}
       {slider("hue", "Colour", hue, 360, "hue")}
       {slider("saturation", "Saturation", sat, 100)}
-      {down.length > 0 && <p className="hint">Not answering: {down.map((l) => l.name).join(", ")}. Changes go to the others.</p>}
-      {blind && <p className="hint">A Bluetooth strip can't report its state. The controls show what was sent last.</p>}
+      {down.length > 0 && <p className="hint">Changes go to the lamps that answer.</p>}
+      {blind && <p className="hint">A Bluetooth strip can't report its state: it shows what was sent last.</p>}
     </section>
   );
 }

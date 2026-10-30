@@ -1046,3 +1046,51 @@ button:disabled {
     gap: 4px;
   }
 }
+
+/* ---------- lamp status ---------- */
+.lamp-status {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.lamp-status li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  font-size: 0.9375rem;
+}
+.lamp-status .dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+}
+.lamp-status .on .dot {
+  background: #4cc38a;
+  border-color: #4cc38a;
+}
+.lamp-status .down .dot {
+  border-color: var(--signal);
+}
+.lamp-name {
+  color: var(--text);
+}
+.lamp-state {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+}
+.lamp-status .down .lamp-state {
+  color: #ffb3ad;
+}
+.lamp-swatch {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
