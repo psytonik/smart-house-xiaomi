@@ -1,5 +1,5 @@
 diff --git a/pkg/xiaomi/miss/cs2/conn.go b/pkg/xiaomi/miss/cs2/conn.go
-index 2c1b395..2362dd3 100644
+index 2c1b395..a5c68e7 100644
 --- a/pkg/xiaomi/miss/cs2/conn.go
 +++ b/pkg/xiaomi/miss/cs2/conn.go
 @@ -24,7 +24,7 @@ func Dial(host, transport string) (*Conn, error) {
@@ -11,16 +11,34 @@ index 2c1b395..2362dd3 100644
  		},
  	}
  	go c.worker()
-@@ -407,6 +407,12 @@ func (c *tcpConn) Write(req []byte) (n int, err error) {
+@@ -407,6 +407,10 @@ func (c *tcpConn) Write(req []byte) (n int, err error) {
  	return
  }
  
 +// mediaQueueSize is how many media packets (video frames and small audio packets) may wait for the reader.
-+// The stock 100 is only a second or two of stream: one pause of the reader (a burst after Wi-Fi retransmits,
-+// a slow consumer) filled it and the whole connection was dropped with "pop buffer is full". Packets are
-+// held as they arrive, so a large queue costs memory only while the reader is behind.
-+const mediaQueueSize = 4000
++// The stock 100 is only a second or two of stream.
++const mediaQueueSize = 600
 +
  func newDataChannel(pushSize, popSize int) *dataChannel {
  	c := &dataChannel{}
  	if pushSize > 0 {
+@@ -445,7 +449,18 @@ func (c *dataChannel) Push(b []byte) error {
+ 		select {
+ 		case c.popBuf <- c.waitData[:c.waitSize]:
+ 		default:
+-			return fmt.Errorf("pop buffer is full")
++			// The reader is behind (a consumer stalled for a while). For live video the right answer is to drop
++			// the oldest packet and keep the newest, not to close the whole connection: closing it freezes the
++			// picture for ten seconds and the camera takes a while to accept a new session.
++			select {
++			case <-c.popBuf:
++			default:
++			}
++			select {
++			case c.popBuf <- c.waitData[:c.waitSize]:
++			default:
++				return fmt.Errorf("pop buffer is full")
++			}
+ 		}
+ 
+ 		c.waitData = c.waitData[c.waitSize:]

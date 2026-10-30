@@ -248,7 +248,7 @@ cmd_motor() {
 }
 
 # Builds go2rtc v1.9.15 + two patches: the Xiaomi pan/tilt motor (from go2rtc PR #2531, Xiaomi part only)
-# and a larger media queue in the Xiaomi transport, so a short pause does not drop the camera ("pop buffer is full").
+# and a Xiaomi transport that drops the oldest packet when the reader is behind, instead of closing the camera connection ("pop buffer is full").
 cmd_build_motor() {
   command -v git >/dev/null || die "нужен git"
   command -v go  >/dev/null || die "нужен Go >= 1.26 (brew install go)"
