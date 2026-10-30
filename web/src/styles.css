@@ -1457,3 +1457,31 @@ button:disabled {
 .vpage-modes.vpage-suction {
   grid-template-columns: repeat(4, 1fr);
 }
+
+/* Sound from the camera and talking to it, over the bottom edge of the picture */
+.viewport .audio-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  z-index: 3;
+}
+.audio-bar button {
+  min-height: 40px;
+}
+.audio-bar .talk.on {
+  background: #b3261e;
+  border-color: #b3261e;
+  color: #fff;
+}
+.audio-hint {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+}

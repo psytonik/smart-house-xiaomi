@@ -16,6 +16,8 @@ import type { AppContext } from "../context.js";
 
 /** How long a reset waits for other viewers (other tabs) to go away. */
 const RESET_WAIT_MS = 6000;
+/** A WebRTC offer is a few KB; anything near this is not one. */
+const MAX_OFFER_CHARS = 64_000;
 
 /** Number of consumers go2rtc has on the stream right now. */
 async function consumerCount(go: AppContext["go"]): Promise<number> {
@@ -61,6 +63,25 @@ export function liveRoutes(app: FastifyInstance, ctx: AppContext): void {
       recorder.resume();
     }
     return { ok: true, otherViewers: viewers };
+  });
+
+  // Talking to the camera: the browser sends its microphone here (a WebRTC offer, sdp), go2rtc takes it into a stream
+  // of its own, and the backend plays that stream into the camera's speaker (see Go2rtc.bridgeTalk).
+  app.post("/api/talk", async (req, reply) => {
+    const sdp = typeof req.body === "string" ? req.body : "";
+    if (!sdp.trim()) throw new HttpError(400, "send the WebRTC offer as application/sdp");
+    if (sdp.length > MAX_OFFER_CHARS) throw new HttpError(413, "offer too large");
+    const answer = await go.publishTalk(sdp);
+    void go
+      .bridgeTalk()
+      .then((ok) => !ok && app.log.warn("talk: the microphone stream never arrived, nothing was played to the camera"))
+      .catch((e) => app.log.warn(`talk: ${e instanceof Error ? e.message : e}`));
+    return reply.code(201).header("content-type", "application/sdp").send(answer);
+  });
+
+  app.delete("/api/talk", async (_req, reply) => {
+    await go.stopTalk();
+    return reply.code(204).send();
   });
 
   app.post("/api/webrtc", async (req, reply) => {

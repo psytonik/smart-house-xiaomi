@@ -1,0 +1,13 @@
+diff --git a/pkg/xiaomi/miss/cs2/conn.go b/pkg/xiaomi/miss/cs2/conn.go
+index a5c68e7..8d1c728 100644
+--- a/pkg/xiaomi/miss/cs2/conn.go
++++ b/pkg/xiaomi/miss/cs2/conn.go
+@@ -265,7 +265,7 @@ func (c *Conn) WritePacket(hdr, payload []byte) error {
+ 	c.seqCh3++
+ 	binary.BigEndian.PutUint32(req[8:], n)
+ 	copy(req[offset:], hdr)
+-	copy(req[offset+hdrSize:], hdr)
++	copy(req[offset+hdrSize:], payload)
+ 
+ 	_, err := c.Conn.Write(req)
+ 	return err

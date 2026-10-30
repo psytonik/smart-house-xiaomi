@@ -102,6 +102,85 @@ export class Go2rtc {
     }
   }
 
+  /** The go2rtc stream the browser's microphone is published to while you talk. */
+  get talkStream(): string {
+    return `${this.cfg.stream}_talk`;
+  }
+
+  /**
+   * Takes the browser's microphone (a WebRTC offer, Opus) into its own go2rtc stream and returns go2rtc's answer.
+   * Only the destination stream is named, and by us: the request cannot choose a stream or a source.
+   */
+  async publishTalk(sdp: string): Promise<string> {
+    let res: Response;
+    try {
+      await this.stopTalk(); // an old bridge would keep writing into the speaker next to the new one
+      await this.ensureTalkStream();
+      res = await fetch(`${this.cfg.go2rtcUrl}/api/webrtc?${new URLSearchParams({ dst: this.talkStream })}`, {
+        method: "POST",
+        body: sdp,
+        headers: { "content-type": "application/sdp" },
+      });
+    } catch {
+      throw new HttpError(502, "go2rtc is unreachable");
+    }
+    if (!res.ok) throw new HttpError(502, `go2rtc did not take the microphone (${res.status})`);
+    return res.text();
+  }
+
+  /**
+   * Ends talking: deleting the microphone stream closes the ffmpeg that was playing it into the camera, which removes the
+   * bridge. Without this every conversation leaves one bridge behind, and they all write into the one speaker (crackling).
+   * Safe to call when nothing is running.
+   */
+  async stopTalk(): Promise<void> {
+    try {
+      await fetch(`${this.cfg.go2rtcUrl}/api/streams?${new URLSearchParams({ src: this.talkStream })}`, { method: "DELETE" });
+    } catch {
+      /* go2rtc is not there: nothing is playing */
+    }
+  }
+
+  /**
+   * go2rtc only lets a browser publish into a stream that already exists. The first time, the stream is created
+   * (go2rtc keeps it in its config file, so this happens once); "webrtc:" is a placeholder source that is never dialled
+   * out, the browser's own connection becomes the producer.
+   */
+  private async ensureTalkStream(): Promise<void> {
+    const has = await fetch(`${this.cfg.go2rtcUrl}/api/streams?${new URLSearchParams({ src: this.talkStream })}`);
+    if (has.ok) return;
+    const q = new URLSearchParams({ name: this.talkStream, src: "webrtc:" });
+    const made = await fetch(`${this.cfg.go2rtcUrl}/api/streams?${q}`, { method: "PUT" });
+    if (!made.ok) throw new HttpError(502, `go2rtc would not create the microphone stream (${made.status})`);
+  }
+
+  /**
+   * Plays the microphone stream into the camera's speaker. The camera takes only A-law 16 kHz and the browser sends
+   * Opus, so ffmpeg (started by go2rtc) converts it. Waits for the microphone stream to arrive first; false if it never does.
+   * It ends by itself when the browser closes the microphone stream.
+   */
+  async bridgeTalk(): Promise<boolean> {
+    this.keeper.ensure(); // the speaker is part of the camera session
+    let ready = false;
+    for (let attempt = 0; attempt < this.cfg.warmupAttempts && !ready; attempt++) {
+      try {
+        const res = await fetch(`${this.cfg.go2rtcUrl}/api/streams?${new URLSearchParams({ src: this.talkStream })}`);
+        const info = res.ok ? ((await res.json()) as { producers?: Array<{ receivers?: unknown[] }> }) : {};
+        ready = (info.producers ?? []).some((p) => (p.receivers?.length ?? 0) > 0);
+      } catch {
+        /* go2rtc busy: look again */
+      }
+      if (!ready) await sleep(this.cfg.warmupPollMs);
+    }
+    if (!ready) return false;
+    const q = new URLSearchParams({ dst: this.cfg.stream, src: `ffmpeg:${this.talkStream}#audio=pcma/16000` });
+    try {
+      return (await fetch(`${this.cfg.go2rtcUrl}/api/streams?${q}`, { method: "POST" })).ok;
+    } catch {
+      return false;
+    }
+  }
+
   async move(direction: PtzDirection): Promise<void> {
     const op = String(PTZ_OPERATIONS[direction]);
     this.keeper.ensure();
