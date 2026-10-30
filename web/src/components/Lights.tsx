@@ -8,9 +8,9 @@ interface Props {
 
 /** One line of plain words for a lamp's status, so it never depends on the dot's colour. */
 function lampState(l: Lamp): string {
-  if (!l.reachable) return l.kind === "bluetooth" ? "Not answering (is the Bluetooth helper running?)" : "Not answering";
+  if (!l.reachable) return l.kind === "bluetooth" ? "Not connected (is the Bluetooth helper running?)" : "Not connected";
   const note = l.stateKnown ? "" : " (last sent)";
-  return l.on ? `On, ${l.brightness ?? 0}%${note}` : `Off${note}`;
+  return `Connected\n${l.on ? `On, ${l.brightness ?? 0}%` : "Off"}${note}`;
 }
 
 /**
@@ -49,6 +49,18 @@ export function Lights({ onAuthError, onError }: Props) {
   }, [lamps]);
 
   if (!lamps || lamps.length === 0) return null;
+
+  // One lamp on its own; the sliders below still move all of them together.
+  const toggleOne = (l: Lamp) => {
+    busy.current += 1;
+    setLamps((all) => all && all.map((x) => (x.id === l.id ? { ...x, on: !l.on } : x)));
+    setLamp(l.id, { on: !l.on })
+      .catch((e) => (e instanceof AuthError ? onAuthError() : onError(e)))
+      .finally(() => {
+        busy.current = Math.max(0, busy.current - 1);
+        load();
+      });
+  };
 
   const reachable = lamps.filter((l) => l.reachable);
   const down = lamps.filter((l) => !l.reachable);
@@ -126,8 +138,13 @@ export function Lights({ onAuthError, onError }: Props) {
         {lamps.map((l) => (
           <li key={l.id} className={l.reachable ? (l.on ? "on" : "off") : "down"}>
             <span className="dot" aria-hidden="true" />
-            <span className="lamp-name">{l.name}</span>
+            <span className="lamp-kind">{l.kind === "bluetooth" ? "Bluetooth" : "Wi-Fi"}</span>
             <span className="lamp-state">{lampState(l)}</span>
+            {l.reachable && (
+              <button type="button" className="lamp-toggle" aria-pressed={!!l.on} aria-label={`${l.name}: ${l.on ? "turn off" : "turn on"}`} onClick={() => toggleOne(l)}>
+                {l.on ? "On" : "Off"}
+              </button>
+            )}
             {l.reachable && l.on && <span className="lamp-swatch" style={{ background: `hsl(${l.hue ?? 0} ${Math.max(l.saturation ?? 100, 25)}% 55%)` }} aria-hidden="true" />}
           </li>
         ))}

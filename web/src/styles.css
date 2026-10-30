@@ -1058,8 +1058,9 @@ button:disabled {
 .lamp-status li {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 28px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-height: 44px;
   font-size: 0.9375rem;
 }
 .lamp-status .dot {
@@ -1076,10 +1077,24 @@ button:disabled {
 .lamp-status .down .dot {
   border-color: var(--signal);
 }
-.lamp-name {
+.lamp-kind {
   color: var(--text);
+  font-weight: 600;
+  min-width: 4.8em;
+}
+.lamp-toggle {
+  flex: none;
+  min-width: 52px;
+  min-height: 44px;
+  padding: 0 12px;
+}
+.lamp-toggle[aria-pressed="true"] {
+  border-color: #2c5a45;
+  color: #7fd9aa;
 }
 .lamp-state {
+  white-space: pre-line; /* "Connected" on the first line, what the lamp is doing under it */
+  line-height: 1.3;
   flex: 1;
   min-width: 0;
   color: var(--muted);
