@@ -133,6 +133,13 @@ describe("backend", () => {
     assert.ok(body.uptimeSec >= 0);
   });
 
+  it("stream reset needs the token, waits for nobody else to be watching and reports it", async () => {
+    assert.equal((await app.inject({ method: "POST", url: "/api/stream/reset" })).statusCode, 401);
+    const res = await app.inject({ method: "POST", url: "/api/stream/reset", headers: auth });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), { ok: true, otherViewers: 0 });
+  });
+
   it("ptz commands from several clients reach the camera one at a time", async () => {
     motorDelayMs = 40;
     motorMaxInFlight = 0;

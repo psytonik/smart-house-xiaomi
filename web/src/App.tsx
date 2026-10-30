@@ -9,6 +9,7 @@ import {
   listClips,
   listSnapshots,
   move,
+  resetStream,
   saveSnapshot,
   type Clip,
   type Direction,
@@ -57,6 +58,7 @@ function Monitor({ onLogout }: { onLogout: () => void }) {
   const [editingZones, setEditingZones] = useState(false);
   const [managingCameras, setManagingCameras] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const [angle, setAngle] = useState(0);
   const [toast, setToast] = useState("");
   const moving = useRef(false);
@@ -155,6 +157,22 @@ function Monitor({ onLogout }: { onLogout: () => void }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [handleMove, capture]);
 
+  // The player is removed while the backend lets go of the camera: an open player would keep the session alive.
+  const reset = useCallback(async () => {
+    if (resetting) return;
+    setResetting(true);
+    try {
+      const { otherViewers } = await resetStream();
+      say(otherViewers > 0 ? `Stream reset. ${otherViewers} other viewer${otherViewers === 1 ? " is" : "s are"} still connected: close those tabs for a fully fresh connection.` : "Stream reset");
+    } catch (e) {
+      fail(e);
+    } finally {
+      setResetting(false);
+      setPlayer({ status: "connecting" });
+      setAttempt((n) => n + 1);
+    }
+  }, [resetting, say, fail]);
+
   function chooseMode(next: Mode) {
     try {
       localStorage.setItem("cam.mode", next);
@@ -194,6 +212,9 @@ function Monitor({ onLogout }: { onLogout: () => void }) {
           ))}
         </div>
         <div className="bar-actions">
+          <button type="button" className="quiet" onClick={() => void reset()} disabled={resetting} title="Drop the buffered picture and reconnect to the camera">
+            {resetting ? "Resetting…" : "Reset stream"}
+          </button>
           <button type="button" className="quiet" onClick={() => setManagingCameras(true)}>
             Cameras
           </button>
@@ -208,15 +229,21 @@ function Monitor({ onLogout }: { onLogout: () => void }) {
 
       <main className="stage">
         <section className="viewport" aria-label="Camera view">
-          <Player mode={mode} attempt={attempt} onState={setPlayer} onAuthError={onLogout} />
+          {!resetting && <Player mode={mode} attempt={attempt} onState={setPlayer} onAuthError={onLogout} />}
           <PrivacyOverlay zones={zones} />
-          {live && motion?.unstable && (
+          {resetting && (
+            <div className="overlay solid" role="status">
+              <p className="headline">Resetting the stream…</p>
+              <p>Letting go of the camera and connecting again. This takes a few seconds.</p>
+            </div>
+          )}
+          {live && !resetting && motion?.unstable && (
             <div className="overlay solid" role="status">
               <p className="headline">Reconnecting to the camera…</p>
               <p>The picture can be damaged for a few seconds. It comes back by itself.</p>
             </div>
           )}
-          {!live && (
+          {!live && !resetting && (
             <div className="overlay">
               {player.status === "error" ? (
                 <>

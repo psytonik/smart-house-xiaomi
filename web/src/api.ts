@@ -296,3 +296,13 @@ export async function addCamera(input: { account: string; region: string; did: s
   if (!res.ok) throw new Error(await errorText(res, "Couldn't add the camera"));
   return (await res.json()) as { name: string; active: boolean };
 }
+
+/**
+ * Asks the backend to let go of the camera so the next connection starts fresh. The caller must close its own
+ * player first, otherwise this tab is itself a viewer that keeps the session open.
+ */
+export async function resetStream(): Promise<{ otherViewers: number }> {
+  const res = await api("/api/stream/reset", { method: "POST" });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't reset the stream"));
+  return (await res.json()) as { otherViewers: number };
+}

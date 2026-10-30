@@ -51,6 +51,7 @@ npm run dev            # открой http://localhost:3100 и введи API_TO
 | GET | `/api/xiaomi/devices?account&region` | камеры аккаунта в регионе |
 | POST | `/api/cameras` | `{account,region,did,name}`: добавить камеру в go2rtc (источник берёт бэкенд, ADR 0013) |
 | GET | `/api/stream.m3u8` | HLS-плейлист (сегменты: `/api/hls/*`) |
+| POST | `/api/stream/reset` | сбросить поток: остановить запись, дождаться, пока go2rtc отпустит камеру (до 6 с), запустить снова; ответ `{ok, otherViewers}` |
 | POST | `/api/webrtc` | WebRTC-offer (SDP или JSON) → answer |
 | GET | `/api/motion` | состояние записи: `enabled`, `state`, `recording`, `level` (% изменившегося кадра) |
 | GET | `/api/events?limit=50` | клипы по движению, новые сверху; у каждого `clipUrl` и `thumbUrl` (подписанные ссылки), `objects` |

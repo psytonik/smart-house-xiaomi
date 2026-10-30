@@ -62,6 +62,8 @@ export class MotionRecorder extends EventEmitter {
   private state: RecorderState = "off";
   private level = 0;
   private stopping = false;
+  /** Held on purpose (stream reset): ffmpeg is not started again until resume(). */
+  private suspended = false;
   private restartDelay = 2000;
   private restartTimer?: NodeJS.Timeout;
   private timers = new Set<NodeJS.Timeout>();
@@ -190,6 +192,39 @@ export class MotionRecorder extends EventEmitter {
     for (const t of this.sweepers) t.unref();
   }
 
+  /**
+   * Lets go of the camera stream: ffmpeg is stopped and stays stopped until `resume()`.
+   * Used to reset the stream, so go2rtc can close its session with the camera and open a fresh one.
+   */
+  async suspend(): Promise<void> {
+    if (!this.cfg.motion.enabled || this.stopping) return;
+    this.suspended = true;
+    clearTimeout(this.restartTimer);
+    this.state = "restarting";
+    const proc = this.proc;
+    if (!proc) return;
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(() => {
+        proc.kill("SIGKILL");
+        resolve();
+      }, 3000);
+      proc.once("close", () => {
+        clearTimeout(t);
+        resolve();
+      });
+      proc.kill("SIGTERM");
+    });
+  }
+
+  /** Starts ffmpeg again after `suspend()`. */
+  resume(): void {
+    if (!this.suspended) return;
+    this.suspended = false;
+    if (this.stopping || this.proc) return;
+    this.restartDelay = 2000;
+    this.launch();
+  }
+
   async stop(): Promise<void> {
     this.stopping = true;
     clearTimeout(this.restartTimer);
@@ -276,7 +311,7 @@ export class MotionRecorder extends EventEmitter {
     proc.on("close", (code) => {
       if (this.proc === proc) this.proc = undefined;
       this.tracker.stop();
-      if (this.stopping || this.state === "ffmpeg-missing") return;
+      if (this.stopping || this.suspended || this.state === "ffmpeg-missing") return;
       this.state = "restarting";
       this.restarts++;
       this.log(`motion: ffmpeg exited (${code}); restarting in ${this.restartDelay / 1000}s`);
