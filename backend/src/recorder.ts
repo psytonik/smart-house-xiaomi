@@ -250,8 +250,9 @@ export class MotionRecorder extends EventEmitter {
       ...input,
       "-i",
       this.cfg.input,
-      // 1) rolling copy segments for clips
-      "-map", "0:v:0", "-c", "copy", "-an",
+      // 1) rolling copy segments for clips: the picture is copied, the camera's sound (A-law, which MPEG-TS cannot hold) becomes AAC
+      "-map", "0:v:0", "-c:v", "copy",
+      ...(m.audio ? ["-map", "0:a:0?", "-c:a", "aac", "-b:a", "32k", "-ar", "16000", "-ac", "1"] : ["-an"]),
       "-f", "segment", "-segment_time", String(m.segmentSec), "-reset_timestamps", "1", "-strftime", "1",
       join(this.ring, "seg-%Y%m%dT%H%M%S.ts"),
       // 2) small gray frames for motion detection

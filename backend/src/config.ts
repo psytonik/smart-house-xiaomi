@@ -29,6 +29,8 @@ export interface MotionConfig {
   stallSec: number;
   /** Decoder warnings are not counted as damage this long after ffmpeg starts (no keyframe yet). */
   startupGraceSec: number;
+  /** Keep the camera's sound in the clips (the camera sends A-law 16 kHz; clips store it as AAC). */
+  audio: boolean;
 }
 
 export function defaultMotion(over: Partial<MotionConfig> = {}): MotionConfig {
@@ -49,6 +51,7 @@ export function defaultMotion(over: Partial<MotionConfig> = {}): MotionConfig {
     settleMs: 2000,
     stallSec: 15,
     startupGraceSec: 10,
+    audio: true,
     ...over,
   };
 }
@@ -140,6 +143,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       threshold,
       lightChange,
       stallSec: num(env, "MOTION_STALL_SEC", 15, 2),
+      audio: env.MOTION_AUDIO !== "false",
     }),
     detect: {
       enabled: env.DETECT_ENABLED !== "false",

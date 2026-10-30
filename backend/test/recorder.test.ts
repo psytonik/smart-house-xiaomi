@@ -67,6 +67,41 @@ describe("MotionRecorder with real ffmpeg", { skip: !hasFfmpeg && "ffmpeg not in
     }
   });
 
+  // The camera sends A-law 16 kHz sound: the clip must keep it (as AAC, which MP4 plays everywhere), unless sound is switched off.
+  for (const audio of [true, false]) {
+    it(`${audio ? "keeps" : "drops"} the sound in a clip when MOTION_AUDIO is ${audio}`, { timeout: 60_000 }, async () => {
+      const src = join(dir, `burst-audio-${audio}.mkv`);
+      const r = spawnSync("ffmpeg", [
+        "-y", "-loglevel", "error",
+        "-f", "lavfi", "-i", "color=c=gray:s=640x360:r=15:d=5",
+        "-f", "lavfi", "-i", "color=c=gray:s=640x360:r=15:d=4,noise=alls=80:allf=t",
+        "-f", "lavfi", "-i", "color=c=gray:s=640x360:r=15:d=8",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=16000:duration=17",
+        "-filter_complex", "[0][1][2]concat=n=3:v=1:a=0[v]",
+        "-map", "[v]", "-map", "3:a", "-c:v", "libx264", "-g", "15", "-pix_fmt", "yuv420p", "-c:a", "pcm_alaw", "-ac", "1", src,
+      ]);
+      assert.equal(r.status, 0, String(r.stderr));
+      const cfg = configFor(join(dir, `audio-${audio}`), src);
+      cfg.motion.audio = audio;
+      const rec = new MotionRecorder(cfg);
+      await rec.start();
+      try {
+        let clips = await rec.store.list();
+        for (let i = 0; i < 100 && clips.length === 0; i++) {
+          await sleep(300);
+          clips = await rec.store.list();
+        }
+        assert.equal(clips.length, 1, "exactly one clip");
+        const probe = String(spawnSync("ffmpeg", ["-hide_banner", "-i", rec.store.file(clips[0]!.clip)]).stderr);
+        assert.match(probe, /Video: h264/);
+        if (audio) assert.match(probe, /Audio: aac/);
+        else assert.doesNotMatch(probe, /Audio:/);
+      } finally {
+        await rec.stop();
+      }
+    });
+  }
+
   it("labels a clip with what the detector finds, and still saves it when the detector fails", { timeout: 90_000 }, async () => {
     const src = join(dir, "burst-detect.mp4");
     makeSource(

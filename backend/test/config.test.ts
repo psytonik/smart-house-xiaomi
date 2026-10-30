@@ -26,6 +26,11 @@ describe("loadConfig", () => {
     assert.throws(() => loadConfig({ ...base, RETENTION_DAYS: "0" }), /RETENTION_DAYS/);
   });
 
+  it("records sound with the clips unless MOTION_AUDIO=false", () => {
+    assert.equal(loadConfig(base).motion.audio, true);
+    assert.equal(loadConfig({ ...base, MOTION_AUDIO: "false" }).motion.audio, false);
+  });
+
   it("listens on localhost unless HOST says otherwise", () => {
     assert.equal(loadConfig(base).host, "127.0.0.1");
     assert.equal(loadConfig({ ...base, HOST: "0.0.0.0" }).host, "0.0.0.0");
