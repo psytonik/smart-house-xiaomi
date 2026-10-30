@@ -27,7 +27,8 @@
 | `./camera.sh` | запустить всё и следить за логами (Ctrl+C остановит) |
 | `./camera.sh up` | запустить в фоне и вернуться |
 | `./camera.sh stop` | остановить то, что запустил скрипт |
-| `./camera.sh restart` | перезапустить в фоне |
+| `./camera.sh restart` | перезапустить всё в фоне (go2rtc тоже: камера переподключается) |
+| `./camera.sh restart backend` | перезапустить только сервер, go2rtc и камеру не трогать (после правок кода) |
 | `./camera.sh status` | что работает и по каким адресам |
 | `./camera.sh logs` | следить за логами (`logs/go2rtc.log`, `logs/backend.log`) |
 | `./camera.sh motor left` | повернуть камеру руками (`left`, `right`, `up`, `down`) |

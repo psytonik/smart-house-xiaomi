@@ -24,6 +24,7 @@
 | [0012](adr/0012-object-detection.md) | Распознавание объектов | YOLOX-Tiny ставит метки «человек / машина / животное»; клип, где ничего не найдено, удаляется (`DETECT_DISCARD_EMPTY`) |
 | [0013](adr/0013-mi-home-sign-in-and-adding-cameras.md) | Вход в Mi Home и добавление камеры | Экран «Cameras» вместо страницы go2rtc; источник потока берёт бэкенд, не браузер |
 | [0014](adr/0014-backend-structure.md) | Структура бэкенда | Корень сборки, модули маршрутов, `ClipBuilder`, общий тестовый конфиг; поведение не менялось |
+| [0015](adr/0015-stream-resilience.md) | Устойчивость потока | Патч очереди go2rtc (`pop buffer is full`), сброс потока, `restart backend`, плашка «Reconnecting…» |
 
 ## Исследования
 
