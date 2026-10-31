@@ -58,7 +58,9 @@ export async function api(path: string, init: RequestInit = {}): Promise<Respons
 
 async function errorText(res: Response, fallback: string): Promise<string> {
   try {
-    const body = (await res.json()) as { error?: string };
+    const body = (await res.json()) as { error?: string; message?: string };
+    // Fastify's own 404 for a path it has no route for: the page is newer than the server that is running
+    if (res.status === 404 && body.message?.startsWith("Route ")) return `${fallback}: the server is older than this page and doesn't have this yet. Restart it (./camera.sh restart backend).`;
     return body.error ?? `${fallback} (${res.status})`;
   } catch {
     return `${fallback} (${res.status})`;
