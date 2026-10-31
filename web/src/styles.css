@@ -2174,3 +2174,39 @@ button:disabled {
     transition: none;
   }
 }
+
+/* running apps */
+.tv-running-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.tv-close-all {
+  min-height: 44px;
+  font-weight: 600;
+}
+.tv-running {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.tv-running li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.tv-running li:first-child {
+  padding-top: 0;
+}
+.tv-running button {
+  min-height: 44px;
+  min-width: 80px;
+}
+.tv-running-meta {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}

@@ -69,6 +69,44 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
     return { sources };
   });
 
+  // What is open in the TV's memory (apps a person opened, and a few helpers), and closing it.
+  app.get("/api/tv/running", async () => {
+    if (!adb) throw new HttpError(404, "the running apps need ADB: set TV_ADB in backend/.env");
+    const robot = adb;
+    let apps: Awaited<ReturnType<TvAdb["running"]>> = [];
+    await guarded(async () => {
+      apps = await robot.running();
+    });
+    return { apps };
+  });
+
+  app.post<{ Body: { packages?: string[]; all?: boolean } }>(
+    "/api/tv/running/close",
+    {
+      schema: {
+        body: {
+          type: "object",
+          additionalProperties: false,
+          // either some packages, or all of them
+          oneOf: [{ required: ["packages"] }, { required: ["all"] }],
+          properties: {
+            packages: { type: "array", minItems: 1, maxItems: 40, items: { type: "string", pattern: "^[A-Za-z0-9._]{1,200}$" } },
+            all: { type: "boolean", enum: [true] },
+          },
+        },
+      },
+    },
+    async (req) => {
+      const robot = adb;
+      if (!robot) throw new HttpError(404, "closing apps needs ADB: set TV_ADB in backend/.env");
+      let closed: string[] = [];
+      await guarded(async () => {
+        closed = await robot.close(req.body.all ? "all" : req.body.packages!);
+      });
+      return { ok: true, closed };
+    },
+  );
+
   app.post<{ Body: { source: string } }>(
     "/api/tv/source",
     { schema: { body: { type: "object", additionalProperties: false, required: ["source"], properties: { source: { type: "string", pattern: "^[a-z0-9]{1,16}$" } } } } },

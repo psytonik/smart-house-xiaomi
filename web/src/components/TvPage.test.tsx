@@ -4,7 +4,7 @@ import * as api from "../api";
 import { TvPage } from "./TvPage";
 import { appName } from "./tvText";
 
-vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getTv: vi.fn(), sendTvKey: vi.fn(), launchTvApp: vi.fn(), startTvPairing: vi.fn(), getTvSources: vi.fn(), switchTvSource: vi.fn(), sendTvCode: vi.fn(), cancelTvPairing: vi.fn() }));
+vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getTv: vi.fn(), sendTvKey: vi.fn(), launchTvApp: vi.fn(), startTvPairing: vi.fn(), getTvSources: vi.fn(), getTvRunning: vi.fn(), closeTvApps: vi.fn(), switchTvSource: vi.fn(), sendTvCode: vi.fn(), cancelTvPairing: vi.fn() }));
 
 const APPS = [{ id: "youtube", label: "YouTube" }, { id: "netflix", label: "Netflix" }];
 const ready = (extra: Partial<api.TvState> = {}): api.TvState => ({ configured: true, paired: true, link: "ready", powered: true, volume: { level: 35, max: 100, muted: false }, app: "com.google.android.youtube.tv", apps: APPS, ...extra });
@@ -17,6 +17,8 @@ describe("TvPage", () => {
     vi.mocked(api.sendTvCode).mockResolvedValue();
     vi.mocked(api.cancelTvPairing).mockResolvedValue();
     vi.mocked(api.getTvSources).mockResolvedValue([]);
+    vi.mocked(api.getTvRunning).mockResolvedValue([]);
+    vi.mocked(api.closeTvApps).mockResolvedValue([]);
     vi.mocked(api.switchTvSource).mockResolvedValue();
   });
   afterEach(() => {
@@ -128,6 +130,35 @@ describe("TvPage", () => {
     expect(input.disabled).toBe(false);
     fireEvent.click(input);
     await waitFor(() => expect(api.sendTvKey).toHaveBeenCalledWith("input"));
+  });
+
+  it("lists the running apps and closes one, or all of them", async () => {
+    vi.mocked(api.getTv).mockResolvedValue(ready({ adb: true }));
+    vi.mocked(api.getTvRunning).mockResolvedValue([{ package: "top.rootu.prisma", label: "Prisma", memoryMb: 62, helper: false }, { package: "com.google.android.apps.mediashell", label: "Chromecast receiver", memoryMb: 37, helper: true }]);
+    vi.mocked(api.closeTvApps).mockResolvedValueOnce(["top.rootu.prisma"]).mockResolvedValueOnce(["top.rootu.prisma", "com.google.android.apps.mediashell"]);
+    render(<TvPage onLogout={() => {}} />);
+    expect(await screen.findByText("62 MB")).toBeTruthy();
+    expect(screen.getByText("37 MB, background service")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close Prisma" }));
+    await waitFor(() => expect(api.closeTvApps).toHaveBeenCalledWith(["top.rootu.prisma"]));
+    expect(await screen.findByText("Closed 1 app")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Close all" }));
+    await waitFor(() => expect(api.closeTvApps).toHaveBeenLastCalledWith("all"));
+    expect(await screen.findByText("Closed 2 apps")).toBeTruthy();
+  });
+
+  it("says so when nothing extra runs, and shows why closing failed", async () => {
+    vi.mocked(api.getTv).mockResolvedValue(ready({ adb: true }));
+    render(<TvPage onLogout={() => {}} />);
+    expect(await screen.findByText("Nothing extra is running.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Close all" }) as HTMLButtonElement).disabled).toBe(true);
+
+    cleanup();
+    vi.mocked(api.getTvRunning).mockResolvedValue([{ package: "top.rootu.prisma", label: "Prisma", memoryMb: 62, helper: false }]);
+    vi.mocked(api.closeTvApps).mockRejectedValue(new Error("could not reach the TV over ADB (is network debugging on?)"));
+    render(<TvPage onLogout={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Close Prisma" }));
+    expect(await screen.findByText(/over ADB/)).toBeTruthy();
   });
 
   it("says why a source could not be read or switched", async () => {

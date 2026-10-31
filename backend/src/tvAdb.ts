@@ -21,6 +21,51 @@ export function findAdb(env: NodeJS.ProcessEnv = process.env): string | undefine
   return ADB_PLACES.find((p) => existsSync(p));
 }
 
+/** An app that is running and may be closed from the remote. */
+export interface RunningApp {
+  package: string;
+  label: string;
+  /** Memory the app's processes hold, in MB. */
+  memoryMb: number;
+  /** A helper (Chromecast receiver, installer) rather than an app a person opened. */
+  helper: boolean;
+}
+
+/** Packages that are never closed from here: the system, the TV's own apps, the launcher, and the service this remote talks to. */
+const PROTECTED = [/^com\.android\./, /^android(\.|$)/, /^com\.gathin\./, /^com\.tcl\./, /^com\.google\.android\.(gms|gsf|tv\.remote|katniss|inputmethod|webview|ext|tv\.frameworkpackagestubs)/, /^com\.dolby\./, /^com\.google\.process\./];
+/** Not apps a person opens, but safe to stop: they start again by themselves when needed. */
+const HELPERS: Record<string, string> = {
+  "com.google.android.apps.mediashell": "Chromecast receiver",
+  "com.google.android.packageinstaller": "Package installer",
+  "com.google.android.permissioncontroller": "Permission controller",
+};
+const NAMES: Record<string, string> = { "top.rootu.prisma": "Prisma", "com.ott_play": "OTT Play", "ru.yourok.torrserve": "TorrServe", "com.google.android.youtube.tv": "YouTube", "com.netflix.ninja": "Netflix" };
+
+function labelOf(pkg: string): string {
+  const known = NAMES[pkg] ?? HELPERS[pkg];
+  if (known) return known;
+  const last = (pkg.split(".").filter((p) => !["com", "org", "net", "android", "tv", "app", "apps", "google"].includes(p)).at(-1) ?? pkg).replace(/[_-]+/g, " ");
+  return last.charAt(0).toUpperCase() + last.slice(1);
+}
+
+/** The apps in memory that may be closed: from `ps` (what runs) and the launcher apps (what a person opens). */
+export function parseRunning(ps: string, launchers: string): RunningApp[] {
+  const openable = new Set([...launchers.matchAll(/^\s+([A-Za-z0-9._]+)\/[A-Za-z0-9._$]+\s*$/gm)].map((m) => m[1]!));
+  const memory = new Map<string, number>();
+  for (const line of ps.split("\n")) {
+    const m = /^u0_a\d+\s+\d+\s+(\d+)\s+([A-Za-z0-9._]+)(?::\S+)?\s*$/.exec(line);
+    if (m) memory.set(m[2]!, (memory.get(m[2]!) ?? 0) + Number(m[1]));
+  }
+  const out: RunningApp[] = [];
+  for (const [pkg, kb] of memory) {
+    const helper = pkg in HELPERS;
+    if (!helper && (!openable.has(pkg) || PROTECTED.some((p) => p.test(pkg)))) continue;
+    out.push({ package: pkg, label: labelOf(pkg), memoryMb: Math.round(kb / 1024), helper });
+  }
+  // the apps a person opened first, then the helpers; the biggest on top of each
+  return out.sort((a, b) => Number(a.helper) - Number(b.helper) || b.memoryMb - a.memoryMb || a.package.localeCompare(b.package));
+}
+
 const KEY_HOME = 3;
 const KEY_TV = 170;
 const KEY_TV_INPUT = 178;
@@ -117,6 +162,25 @@ export class TvAdb {
   /** Opens the TV's own "Source Choice" list (what the INPUT key of the TV's remote does). */
   async openSourceMenu(): Promise<void> {
     await this.shell(["input", "keyevent", String(KEY_TV_INPUT)]);
+  }
+
+  /** The apps in the TV's memory that may be closed. */
+  async running(): Promise<RunningApp[]> {
+    const ps = await this.shell(["ps", "-A", "-o", "USER,PID,RSS,NAME"]);
+    const launchers = (await this.shell(["cmd", "package", "query-activities", "--brief", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LEANBACK_LAUNCHER"]).catch(() => "")) +
+      "\n" + (await this.shell(["cmd", "package", "query-activities", "--brief", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER"]).catch(() => ""));
+    return parseRunning(ps, launchers);
+  }
+
+  /**
+   * Stops apps (like "Force stop" in the settings). Only apps that are running and may be closed are touched, whatever was asked for;
+   * returns the ones that were stopped.
+   */
+  async close(which: string[] | "all"): Promise<string[]> {
+    const closable = await this.running();
+    const wanted = which === "all" ? closable : closable.filter((a) => which.includes(a.package));
+    for (const a of wanted) await this.shell(["am", "force-stop", a.package]);
+    return wanted.map((a) => a.package);
   }
 
   /** Opens an app by the component of its launcher activity, e.g. "top.rootu.prisma/.ConnectActivity". */

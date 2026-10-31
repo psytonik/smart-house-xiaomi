@@ -567,6 +567,32 @@ export async function getTvSources(): Promise<Array<{ id: string; label: string 
   if (!res.ok) throw new Error(await errorText(res, "Couldn't read the TV's sources"));
   return ((await res.json()) as { sources: Array<{ id: string; label: string }> }).sources;
 }
+export interface TvRunningApp {
+  package: string;
+  label: string;
+  memoryMb: number;
+  /** A helper (Chromecast receiver, installer), not an app a person opened. */
+  helper: boolean;
+}
+
+/** The apps in the TV's memory that may be closed. */
+export async function getTvRunning(): Promise<TvRunningApp[]> {
+  const res = await api("/api/tv/running");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the running apps"));
+  return ((await res.json()) as { apps: TvRunningApp[] }).apps;
+}
+
+/** Stops the named apps, or all that may be closed. Returns the packages that were stopped. */
+export async function closeTvApps(which: string[] | "all"): Promise<string[]> {
+  const res = await api("/api/tv/running/close", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(which === "all" ? { all: true } : { packages: which }),
+  });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't close the apps"));
+  return ((await res.json()) as { closed: string[] }).closed;
+}
+
 export const switchTvSource = (source: string) => postTv("source", { source }, "Couldn't switch the source");
 export const sendTvKey = (key: TvKey) => postTv("key", { key }, "The TV didn't take that");
 export const launchTvApp = (app: string) => postTv("app", { app }, "Couldn't open the app");

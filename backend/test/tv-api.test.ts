@@ -149,8 +149,10 @@ describe("TV API with ADB (pretend TV and adb)", () => {
       "    1413744128: com.tcl.tvinput/.passthroughinput.TvPassThroughService/HW1413744128",
     ].join("\n");
     writeFileSync(join(dir, "dump.txt"), dump);
+    writeFileSync(join(dir, "ps.txt"), "USER PID RSS NAME\nu0_a104 1 50000 top.rootu.prisma\nu0_a56 2 38000 com.google.android.apps.mediashell\nu0_a102 3 40000 com.gathin.tvhome\n");
+    writeFileSync(join(dir, "launchers.txt"), "  top.rootu.prisma/.ConnectActivity\n  com.gathin.tvhome/.MainActivity\n");
     const adb = join(dir, "adb");
-    writeFileSync(adb, `#!/bin/sh\nif [ "$1" = "connect" ]; then echo "connected to $2"; exit 0; fi\nif [ "$4" = "dumpsys" ]; then cat "${dir}/dump.txt"; exit 0; fi\nif [ "$4" = "pm" ]; then exit 0; fi\necho "$@" >> "${log}"\n`);
+    writeFileSync(adb, `#!/bin/sh\nif [ "$1" = "connect" ]; then echo "connected to $2"; exit 0; fi\nif [ "$4" = "dumpsys" ]; then cat "${dir}/dump.txt"; exit 0; fi\nif [ "$4" = "pm" ]; then exit 0; fi\nif [ "$4" = "ps" ]; then cat "${dir}/ps.txt"; exit 0; fi\nif [ "$4" = "cmd" ]; then cat "${dir}/launchers.txt"; exit 0; fi\necho "$@" >> "${log}"\n`);
     chmodSync(adb, 0o755);
     process.env.TV_IP = "127.0.0.1";
     process.env.TV_REMOTE_PORT = String(tv.remotePort);
@@ -187,6 +189,24 @@ describe("TV API with ADB (pretend TV and adb)", () => {
     assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell am start -n top.rootu.prisma/.ConnectActivity");
   });
 
+  it("lists the running apps and closes them one by one or all together, never the launcher", async () => {
+    const running = (await app.inject({ url: "/api/tv/running", headers: auth })).json().apps as Array<{ package: string; label: string; helper: boolean; memoryMb: number }>;
+    assert.deepEqual(running.map((a) => [a.package, a.label, a.helper]), [["top.rootu.prisma", "Prisma", false], ["com.google.android.apps.mediashell", "Chromecast receiver", true]]);
+    assert.equal((await app.inject({ url: "/api/tv/running" })).statusCode, 401);
+
+    const one = await post("/api/tv/running/close", { packages: ["top.rootu.prisma", "com.gathin.tvhome"] });
+    assert.deepEqual(one.json().closed, ["top.rootu.prisma"]);
+    assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell am force-stop top.rootu.prisma");
+
+    const all = await post("/api/tv/running/close", { all: true });
+    assert.deepEqual(all.json().closed, ["top.rootu.prisma", "com.google.android.apps.mediashell"]);
+    assert.ok(!calls().some((c) => c.includes("com.gathin.tvhome")), "the launcher was never touched");
+
+    const before = calls().length;
+    for (const bad of [{}, { packages: [] }, { packages: ["x; reboot"] }, { packages: "top.rootu.prisma;reboot" }, { all: "yes" }]) assert.equal((await post("/api/tv/running/close", bad)).statusCode, 400, JSON.stringify(bad));
+    assert.equal(calls().length, before, "nothing was stopped for a bad request");
+  });
+
   it("switches to a source, and refuses one that doesn't exist", async () => {
     assert.equal((await post("/api/tv/source", { source: "hdmi1" })).statusCode, 200);
     assert.ok(calls().at(-1)!.includes("passthrough/com.tcl.tvinput%2F.passthroughinput.TvPassThroughService%2FHW1413744128"));
@@ -209,6 +229,8 @@ describe("TV API with ADB set but unusable", () => {
       assert.equal((await app.inject({ url: "/api/tv", headers: auth })).json().adb, false);
       assert.equal((await app.inject({ url: "/api/tv/sources", headers: auth })).statusCode, 404);
       assert.equal((await app.inject({ method: "POST", url: "/api/tv/source", headers: auth, payload: { source: "tv" } })).statusCode, 404);
+      assert.equal((await app.inject({ url: "/api/tv/running", headers: auth })).statusCode, 404);
+      assert.equal((await app.inject({ method: "POST", url: "/api/tv/running/close", headers: auth, payload: { all: true } })).statusCode, 404);
     } finally {
       await app.close();
       rmSync(dir, { recursive: true, force: true });

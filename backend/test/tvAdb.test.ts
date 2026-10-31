@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { TvError } from "../src/tv.js";
-import { findAdb, parseSources, TvAdb } from "../src/tvAdb.js";
+import { findAdb, parseRunning, parseSources, TvAdb } from "../src/tvAdb.js";
 
 /** The part of a real `adb shell dumpsys tv_input` of a TCL Google TV that says what inputs there are. */
 const DUMPSYS = `
@@ -24,6 +24,55 @@ const DUMPSYS = `
     1413744384: com.tcl.tvinput/.passthroughinput.TvPassThroughService/HW1413744384
   mHdmiInputIdMap: id -> inputId
 `;
+
+/** `adb shell ps -A -o USER,PID,RSS,NAME` of the TV, trimmed. */
+const PS = `USER            PID    RSS NAME
+root              1   2800 init
+system         1026  31356 system_server
+u0_a104       29820  54928 top.rootu.prisma
+u0_a104       29901   9000 top.rootu.prisma:service
+u0_a102        1504  47720 com.gathin.tvhome
+u0_a56         2414  38428 com.google.android.apps.mediashell
+u0_a31         1026  31356 com.android.systemui
+u0_a59         1348  27804 com.google.android.tv.remote.service
+u0_a22        26578  18420 com.google.android.packageinstaller
+u0_a28        11259  14664 com.google.android.gms
+u0_a101        3000  60000 com.ott_play
+u0_a23        21431   8448 com.google.android.permissioncontroller
+u0_a77         4000   5000 com.tcl.tv
+`;
+
+/** `cmd package query-activities` for the launcher category. */
+const LAUNCHERS = `priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=false
+  com.android.tv.settings/.MainSettings
+priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=false
+  com.gathin.tvhome/.MainActivity
+priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=false
+  com.ott_play/com.ottplay.ott_play.MainActivity
+priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=false
+  com.tcl.tv/.TVActivity
+priority=0 preferredOrder=0 match=0x108000 specificIndex=-1 isDefault=false
+  top.rootu.prisma/.ConnectActivity
+`;
+
+describe("running apps of the TV", () => {
+  it("offers apps a person opened and a few helpers, never the system, the launcher or this remote", () => {
+    const list = parseRunning(PS, LAUNCHERS);
+    assert.deepEqual(list.map((a) => a.package), ["top.rootu.prisma", "com.ott_play", "com.google.android.apps.mediashell", "com.google.android.packageinstaller", "com.google.android.permissioncontroller"]);
+    const prisma = list.find((a) => a.package === "top.rootu.prisma")!;
+    assert.equal(prisma.label, "Prisma");
+    assert.equal(prisma.helper, false);
+    assert.equal(prisma.memoryMb, 62, "the app's processes added up: 54928 + 9000 KB");
+    assert.equal(list.find((a) => a.package === "com.google.android.apps.mediashell")?.helper, true);
+    assert.equal(list.find((a) => a.package === "com.google.android.apps.mediashell")?.label, "Chromecast receiver");
+    for (const kept of ["com.gathin.tvhome", "com.android.systemui", "com.google.android.tv.remote.service", "com.google.android.gms", "com.tcl.tv"]) assert.ok(!list.some((a) => a.package === kept), kept);
+  });
+
+  it("is empty when nothing of the sort is running", () => {
+    assert.deepEqual(parseRunning("USER PID RSS NAME\nroot 1 1 init\n", LAUNCHERS), []);
+    assert.deepEqual(parseRunning("", ""), []);
+  });
+});
 
 describe("sources of the TV", () => {
   it("lists what the TV has, in the order of its own Source Choice", () => {
@@ -60,6 +109,8 @@ if [ "$1" = "connect" ]; then echo "connected to $2"; exit 0; fi
 if [ -f "${dir}/fail-once" ]; then rm "${dir}/fail-once"; echo "error: device '$2' not found" >&2; exit 1; fi
 if [ "$4" = "dumpsys" ]; then cat "${dir}/dumpsys.txt"; exit 0; fi
 if [ "$4" = "pm" ]; then echo "package:com.tcl.ui_mediaCenter"; exit 0; fi
+if [ "$4" = "ps" ]; then cat "${dir}/ps.txt"; exit 0; fi
+if [ "$4" = "cmd" ]; then cat "${dir}/launchers.txt"; exit 0; fi
 echo "$@" >> "${log}"
 `,
     );
@@ -112,6 +163,22 @@ echo "$@" >> "${log}"
     await assert.rejects(new TvAdb("10.0.0.9:5555", join(dir, "no-such-adb")).openSourceMenu(), (e: unknown) => e instanceof TvError && e.status === 503 && /over ADB/.test(e.message));
     writeFileSync(adb, '#!/bin/sh\nif [ "$1" = "connect" ]; then echo "failed to connect to $2"; exit 0; fi\n');
     await assert.rejects(new TvAdb("10.0.0.9:5555", adb).openSourceMenu(), (e: unknown) => e instanceof TvError && e.status === 503);
+  });
+
+  it("lists what runs and closes only what may be closed", async () => {
+    writeFileSync(join(dir, "ps.txt"), PS);
+    writeFileSync(join(dir, "launchers.txt"), LAUNCHERS);
+    const tv = new TvAdb("10.0.0.9:5555", adb);
+    assert.deepEqual((await tv.running()).map((a) => a.package), ["top.rootu.prisma", "com.ott_play", "com.google.android.apps.mediashell", "com.google.android.packageinstaller", "com.google.android.permissioncontroller"]);
+
+    // named ones: only those that run and may be closed; the rest is ignored
+    assert.deepEqual(await tv.close(["top.rootu.prisma", "com.gathin.tvhome", "com.android.systemui", "not.running.app", "x; reboot"]), ["top.rootu.prisma"]);
+    assert.deepEqual(calls(), ["-s 10.0.0.9:5555 shell am force-stop top.rootu.prisma"]);
+
+    // everything that may be closed
+    assert.deepEqual(await tv.close("all"), ["top.rootu.prisma", "com.ott_play", "com.google.android.apps.mediashell", "com.google.android.packageinstaller", "com.google.android.permissioncontroller"]);
+    assert.equal(calls().length, 6);
+    assert.ok(calls().every((c) => /shell am force-stop [A-Za-z0-9._]+$/.test(c) || /input keyevent|am start/.test(c)));
   });
 
   it("opens an app by its component, and says so when the TV doesn't have it", async () => {

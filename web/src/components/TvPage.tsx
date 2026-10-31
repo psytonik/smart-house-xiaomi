@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { AuthError, cancelTvPairing, getTv, getTvSources, launchTvApp, sendTvCode, sendTvKey, startTvPairing, switchTvSource, type TvKey, type TvState } from "../api";
+import { AuthError, cancelTvPairing, closeTvApps, getTv, getTvRunning, getTvSources, launchTvApp, sendTvCode, sendTvKey, startTvPairing, switchTvSource, type TvKey, type TvRunningApp, type TvState } from "../api";
 import { Shell } from "./Shell";
 import { CODE_PATTERN, appName } from "./tvText";
 
@@ -94,6 +94,7 @@ export function TvPage({ onLogout }: { onLogout: () => void }) {
             </div>
             <div className="vcol">
               {state.adb && <Sources onError={fail} onAuthError={onLogout} />}
+              {state.adb && <Running onError={fail} onAuthError={onLogout} onNotice={say} />}
               <Apps state={state} ready={ready} onError={fail} />
               <MoreKeys ready={ready} press={press} adb={state.adb === true} />
               <section className="vcard tv-pair-again">
@@ -309,6 +310,75 @@ function Sources({ onError, onAuthError }: { onError: (e: unknown) => void; onAu
       )}
       {problem && <p className="pair-problem" role="alert">{problem}</p>}
       <p className="hint tv-keys-hint">The Input button opens the TV's own Source Choice list. Move in it with the arrows and OK.</p>
+    </section>
+  );
+}
+
+/** How often the list of running apps is refreshed. */
+const RUNNING_POLL_MS = 5000;
+
+/** What is open in the TV's memory (apps a person opened, and helpers like the Chromecast receiver), with a way to close it. */
+function Running({ onError, onAuthError, onNotice }: { onError: (e: unknown) => void; onAuthError: () => void; onNotice: (text: string) => void }) {
+  const [apps, setApps] = useState<TvRunningApp[] | null>(null);
+  const [closing, setClosing] = useState<string | null>(null);
+  const load = useCallback(
+    () =>
+      getTvRunning()
+        .then(setApps)
+        .catch((e) => {
+          if (e instanceof AuthError) onAuthError(); // other errors: keep what was shown, try again at the next round
+        }),
+    [onAuthError],
+  );
+  useEffect(() => {
+    void load();
+    const t = setInterval(() => !document.hidden && void load(), RUNNING_POLL_MS);
+    return () => clearInterval(t);
+  }, [load]);
+
+  const close = async (which: string[] | "all", id: string) => {
+    setClosing(id);
+    try {
+      const closed = await closeTvApps(which);
+      onNotice(closed.length === 0 ? "Nothing to close" : closed.length === 1 ? "Closed 1 app" : `Closed ${closed.length} apps`);
+    } catch (e) {
+      if (e instanceof AuthError) onAuthError();
+      else onError(e);
+    } finally {
+      setClosing(null);
+      void load();
+    }
+  };
+
+  if (!apps) return null;
+  return (
+    <section className="vcard" aria-labelledby="tv-running-title">
+      <div className="tv-running-head">
+        <h2 id="tv-running-title">Running apps</h2>
+        <button type="button" className="tv-close-all" disabled={apps.length === 0 || closing !== null} onClick={() => void close("all", "all")}>
+          {closing === "all" ? "Closing…" : "Close all"}
+        </button>
+      </div>
+      {apps.length === 0 ? (
+        <p className="hint tv-keys-hint">Nothing extra is running.</p>
+      ) : (
+        <ul className="tv-running">
+          {apps.map((a) => (
+            <li key={a.package}>
+              <div>
+                <p>{a.label}</p>
+                <p className="tv-running-meta">
+                  {a.memoryMb} MB{a.helper ? ", background service" : ""}
+                </p>
+              </div>
+              <button type="button" disabled={closing !== null} onClick={() => void close([a.package], a.package)} aria-label={`Close ${a.label}`}>
+                {closing === a.package ? "Closing…" : "Close"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="hint tv-keys-hint">Closing stops the app, like Force stop in the settings. The launcher, the system and this remote are never closed.</p>
     </section>
   );
 }
