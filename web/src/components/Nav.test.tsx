@@ -9,6 +9,7 @@ describe("Nav", () => {
     render(<Nav current="lights" />);
     expect(screen.getByRole("link", { name: "Camera" }).getAttribute("href")).toBe("/");
     expect(screen.getByRole("link", { name: "Vacuum" }).getAttribute("href")).toBe("/vacuum");
+    expect(screen.getByRole("link", { name: "TV" }).getAttribute("href")).toBe("/tv");
     expect(screen.getByRole("link", { name: "Lights" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("link", { name: "Camera" }).getAttribute("aria-current")).toBeNull();
   });

@@ -27,6 +27,7 @@ import { Login } from "./components/Login";
 import { Player, type Mode, type PlayerState } from "./components/Player";
 import { PrivacyOverlay } from "./components/PrivacyOverlay";
 import { SystemPanel } from "./components/SystemPanel";
+import { TvPage } from "./components/TvPage";
 import { VacuumPage } from "./components/VacuumPage";
 import { useRoute } from "./route";
 import { ZoneEditor } from "./components/ZoneEditor";
@@ -322,6 +323,8 @@ export function App() {
       return <VacuumPage onLogout={logout} />;
     case "lights":
       return <LightsPage onLogout={logout} />;
+    case "tv":
+      return <TvPage onLogout={logout} />;
     default:
       return <Monitor onLogout={logout} />;
   }

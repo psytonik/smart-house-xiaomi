@@ -526,3 +526,42 @@ export async function sendCleaningMode(mode: CleaningMode): Promise<void> {
   });
   if (!res.ok) throw new Error(await errorText(res, "Couldn't change the cleaning mode"));
 }
+
+// ---------- TV (Google TV / Android TV on the local network) ----------
+export type TvKey =
+  | "power" | "home" | "back" | "up" | "down" | "left" | "right" | "ok" | "volumeUp" | "volumeDown" | "mute" | "menu" | "settings" | "input"
+  | "channelUp" | "channelDown" | "playPause" | "play" | "pause" | "stop" | "next" | "previous" | "rewind" | "fastForward" | "info" | "guide" | "tv"
+  | "search" | "captions" | "enter" | "backspace" | "hdmi1" | "hdmi2" | "hdmi3" | "hdmi4" | "red" | "green" | "yellow" | "blue"
+  | "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9";
+
+export interface TvState {
+  configured: boolean;
+  /** This app has been paired with the TV. */
+  paired?: boolean;
+  link?: "offline" | "connecting" | "ready";
+  /** The TV is showing a code: type it in. */
+  waitingForCode?: boolean;
+  powered?: boolean;
+  volume?: { level: number; max: number; muted: boolean };
+  /** Android package of the app in front. */
+  app?: string;
+  apps?: Array<{ id: string; label: string }>;
+}
+
+export async function getTv(): Promise<TvState> {
+  const res = await api("/api/tv");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the TV"));
+  return (await res.json()) as TvState;
+}
+
+async function postTv(path: string, body: object, fallback: string): Promise<void> {
+  const res = await api(`/api/tv/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(await errorText(res, fallback));
+}
+
+export const sendTvKey = (key: TvKey) => postTv("key", { key }, "The TV didn't take that");
+export const launchTvApp = (app: string) => postTv("app", { app }, "Couldn't open the app");
+/** Asks the TV to show its pairing code. */
+export const startTvPairing = () => postTv("pair", {}, "Couldn't start pairing");
+export const sendTvCode = (code: string) => postTv("pair/code", { code }, "Couldn't pair");
+export const cancelTvPairing = () => postTv("pair/cancel", {}, "Couldn't cancel pairing");

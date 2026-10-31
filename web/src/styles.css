@@ -1889,3 +1889,288 @@ button:disabled {
   border-radius: 8px;
   color-scheme: dark;
 }
+
+/* ---------- TV remote ---------- */
+.tv-status {
+  grid-template-columns: 1fr auto;
+  align-items: center;
+}
+.tv-status-text {
+  display: grid;
+  gap: 2px;
+}
+.tv-link {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tv-link::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.tv-link-on::before {
+  background: #3cc878;
+}
+.tv-link-off {
+  color: var(--muted);
+}
+.tv-now {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+.tv-status .hint {
+  max-width: none;
+  font-size: 0.8125rem;
+  margin-top: 4px;
+}
+.tv-power {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  width: 64px;
+  min-height: 64px;
+  border-radius: 50%;
+  padding: 6px;
+  font-size: 0.75rem;
+}
+.tv-power svg {
+  width: 24px;
+  height: 24px;
+}
+.tv-power:not(:disabled):hover {
+  border-color: var(--signal);
+  color: var(--signal);
+}
+
+.tv-remote {
+  gap: 16px;
+}
+.tv-row {
+  display: grid;
+  gap: 8px;
+}
+.tv-row-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+.tv-row-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+.tv-row-5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+.tv-key {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 2px;
+  min-height: 48px;
+  padding: 6px 4px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  line-height: 1.1;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  transition: transform 0.08s, background 0.12s;
+}
+.tv-key svg {
+  width: 22px;
+  height: 22px;
+}
+.tv-key:active:not(:disabled) {
+  transform: scale(0.95);
+  background: var(--line);
+}
+.tv-middle {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 64px;
+  gap: 12px;
+  align-items: center;
+}
+.tv-side {
+  display: grid;
+  gap: 8px;
+}
+.tv-side .tv-key {
+  min-height: 56px;
+  font-size: 0.8125rem;
+}
+.tv-dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 4px;
+  padding: 8px;
+  border-radius: 50%;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  aspect-ratio: 1;
+}
+.tv-dpad .tv-key {
+  min-height: 0;
+  border-radius: 50%;
+  background: transparent;
+  border-color: transparent;
+}
+.tv-dpad .tv-key:active:not(:disabled) {
+  background: var(--slate-2);
+}
+.tv-dpad svg {
+  width: 26px;
+  height: 26px;
+  fill: currentColor;
+}
+.tv-up {
+  grid-area: 1 / 2;
+}
+.tv-left {
+  grid-area: 2 / 1;
+}
+.tv-ok {
+  grid-area: 2 / 2;
+  background: var(--focus) !important;
+  color: var(--ink);
+  font-size: 0.9375rem !important;
+  font-weight: 700;
+}
+.tv-right {
+  grid-area: 2 / 3;
+}
+.tv-down {
+  grid-area: 3 / 2;
+}
+.tv-play {
+  background: var(--slate-2);
+  border-color: var(--focus);
+}
+.tv-keys-hint {
+  max-width: none;
+  font-size: 0.8125rem;
+}
+
+.tv-apps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+.tv-apps button {
+  width: 100%;
+  min-height: 52px;
+  font-weight: 600;
+}
+
+.tv-more summary,
+.tv-pair-again summary {
+  cursor: pointer;
+  min-height: 24px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tv-more-body {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+.tv-more h3 {
+  margin: 8px 0 0;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.tv-numbers {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+}
+.tv-others {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.tv-colour {
+  border-bottom-width: 4px;
+}
+.tv-red {
+  border-bottom-color: #e5484d;
+}
+.tv-green {
+  border-bottom-color: #3cc878;
+}
+.tv-yellow {
+  border-bottom-color: #f5c04a;
+}
+.tv-blue {
+  border-bottom-color: #5b8def;
+}
+.tv-pair-again .hint {
+  max-width: none;
+  margin: 8px 0;
+}
+
+.tv-pairing {
+  width: min(100%, 460px);
+  justify-self: center;
+}
+.pair-steps {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+}
+.pair-form {
+  display: grid;
+  gap: 8px;
+}
+.pair-form label {
+  font-weight: 600;
+}
+.pair-form input {
+  font: inherit;
+  font-size: 1.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.35em;
+  text-align: center;
+  min-height: 56px;
+  color: var(--text);
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.pair-form input[aria-invalid="true"] {
+  border-color: var(--signal);
+}
+.pair-form .hint {
+  max-width: none;
+  font-size: 0.8125rem;
+}
+.pair-actions {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 8px;
+}
+.pair-actions button {
+  min-height: 48px;
+}
+.pair-problem {
+  color: var(--signal);
+  font-size: 0.9375rem;
+  max-width: none;
+}
+.pair-problem:empty {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tv-key {
+    transition: none;
+  }
+}

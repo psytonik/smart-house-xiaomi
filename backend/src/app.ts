@@ -12,6 +12,7 @@ import { ptzRoutes } from "./routes/ptz.js";
 import { pushRoutes } from "./routes/push.js";
 import { snapshotsRoutes } from "./routes/snapshots.js";
 import { statusRoutes } from "./routes/status.js";
+import { tvRoutes } from "./routes/tv.js";
 import { vacuumRoutes } from "./routes/vacuum.js";
 import { zonesRoutes } from "./routes/zones.js";
 import { registerSecurity } from "./security.js";
@@ -35,15 +36,15 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}) {
 
   app.get("/health", async () => ({ ok: true }));
 
-  for (const routes of [statusRoutes, ptzRoutes, snapshotsRoutes, eventsRoutes, zonesRoutes, pushRoutes, camerasRoutes, lampRoutes, vacuumRoutes, liveRoutes]) {
+  for (const routes of [statusRoutes, ptzRoutes, snapshotsRoutes, eventsRoutes, zonesRoutes, pushRoutes, camerasRoutes, lampRoutes, vacuumRoutes, tvRoutes, liveRoutes]) {
     routes(app, ctx);
   }
 
   // Web app (public shell; all data goes through the token-protected /api).
   if (existsSync(cfg.publicDir)) {
     await app.register(fastifyStatic, { root: cfg.publicDir });
-    // The pages have their own addresses (/vacuum, /lights); a reload or a bookmark must still get the app.
-    for (const page of ["/vacuum", "/lights"]) app.get(page, (_req, reply) => reply.sendFile("index.html"));
+    // The pages have their own addresses (/vacuum, /lights, /tv); a reload or a bookmark must still get the app.
+    for (const page of ["/vacuum", "/lights", "/tv"]) app.get(page, (_req, reply) => reply.sendFile("index.html"));
   }
 
   return app;

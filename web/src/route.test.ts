@@ -5,6 +5,7 @@ describe("parseRoute", () => {
   it("gives each device its own page", () => {
     expect(parseRoute("/vacuum")).toBe("vacuum");
     expect(parseRoute("/lights")).toBe("lights");
+    expect(parseRoute("/tv")).toBe("tv");
   });
   it("falls back to the camera", () => {
     expect(parseRoute("")).toBe("camera");
