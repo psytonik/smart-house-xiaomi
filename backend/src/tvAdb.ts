@@ -119,6 +119,14 @@ export class TvAdb {
     await this.shell(["input", "keyevent", String(KEY_TV_INPUT)]);
   }
 
+  /** Opens an app by the component of its launcher activity, e.g. "top.rootu.prisma/.ConnectActivity". */
+  async launchComponent(component: string): Promise<void> {
+    if (!/^[A-Za-z0-9._]+\/[A-Za-z0-9._$]+$/.test(component)) throw new TvError("not an app component", 400);
+    // `am start` says it on stdout, and still exits well, when the app is not there
+    const out = await this.shell(["am", "start", "-n", component]);
+    if (/^Error/m.test(out)) throw new TvError("that app is not installed on the TV", 404);
+  }
+
   async switchTo(id: string): Promise<void> {
     const source = (await this.discover()).find((s) => s.id === id);
     if (!source) throw new TvError("this TV has no such source", 400);

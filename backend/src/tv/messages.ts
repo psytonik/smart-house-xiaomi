@@ -60,16 +60,21 @@ export const KEYS = {
 export type TvKey = keyof typeof KEYS;
 export const KEY_NAMES = Object.keys(KEYS) as TvKey[];
 
-/** Apps the remote can open (the TV opens the app, or the page of it, for these links). A fixed list: no arbitrary links to the TV. */
-export const APPS = {
+/**
+ * Apps the remote can open. A fixed list: nothing free-form is ever sent to the TV. An app opens either by a link (over the remote
+ * protocol: the TV opens the app, or the page of it) or, for an app that was installed by hand, by the component of its launcher
+ * (over ADB, so it is offered only when ADB is set up).
+ */
+export const APPS: Record<string, { label: string; link?: string; component?: string }> = {
   youtube: { label: "YouTube", link: "https://www.youtube.com" },
   netflix: { label: "Netflix", link: "https://www.netflix.com/browse" },
   prime: { label: "Prime Video", link: "https://app.primevideo.com" },
   disney: { label: "Disney+", link: "https://www.disneyplus.com" },
   twitch: { label: "Twitch", link: "https://www.twitch.tv" },
-} as const;
-export type TvApp = keyof typeof APPS;
-export const APP_IDS = Object.keys(APPS) as TvApp[];
+  prisma: { label: "Prisma", component: "top.rootu.prisma/.ConnectActivity" },
+};
+export type TvApp = string;
+export const APP_IDS = Object.keys(APPS);
 
 // ---------- pairing (port 6467) ----------
 const PROTOCOL = 2;

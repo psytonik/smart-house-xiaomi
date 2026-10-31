@@ -11,6 +11,8 @@ const NAMES: Record<string, string> = {
   "com.android.vending": "Play Store",
   "com.android.tv.settings": "Settings",
   "com.spotify.tv.android": "Spotify",
+  "top.rootu.prisma": "Prisma",
+  "ru.yourok.torrserve": "TorrServe",
 };
 
 export function appName(pkg: string): string {

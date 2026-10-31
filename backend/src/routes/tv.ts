@@ -53,7 +53,8 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
     return { ok: true };
   };
 
-  const apps = APP_IDS.map((id) => ({ id, label: APPS[id].label }));
+  // an app that opens by its component needs ADB: it is not offered without it
+  const apps = APP_IDS.filter((id) => adb || !APPS[id]!.component).map((id) => ({ id, label: APPS[id]!.label }));
 
   app.get("/api/tv", async () => (tv ? { configured: true, ...tv.status(), apps, adb: adb !== undefined } : { configured: false }));
 
@@ -100,6 +101,14 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
   app.post<{ Body: { app: TvApp } }>(
     "/api/tv/app",
     { schema: { body: { type: "object", additionalProperties: false, required: ["app"], properties: { app: { type: "string", enum: APP_IDS } } } } },
-    (req) => guarded(() => need().launch(req.body.app)),
+    (req) => {
+      const component = APPS[req.body.app]?.component;
+      if (component) {
+        const robot = adb;
+        if (!robot) throw new HttpError(404, "this app opens over ADB: set TV_ADB in backend/.env");
+        return guarded(() => robot.launchComponent(component));
+      }
+      return guarded(() => need().launch(req.body.app));
+    },
   );
 }

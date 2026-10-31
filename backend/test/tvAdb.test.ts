@@ -114,6 +114,17 @@ echo "$@" >> "${log}"
     await assert.rejects(new TvAdb("10.0.0.9:5555", adb).openSourceMenu(), (e: unknown) => e instanceof TvError && e.status === 503);
   });
 
+  it("opens an app by its component, and says so when the TV doesn't have it", async () => {
+    const tv = new TvAdb("10.0.0.9:5555", adb);
+    await tv.launchComponent("top.rootu.prisma/.ConnectActivity");
+    assert.deepEqual(calls(), ["-s 10.0.0.9:5555 shell am start -n top.rootu.prisma/.ConnectActivity"]);
+    for (const bad of ["", "top.rootu.prisma", "a/b; reboot", "$(id)/x", "a b/c"]) await assert.rejects(tv.launchComponent(bad), /component/, bad);
+    assert.equal(calls().length, 1, "nothing was sent for a bad component");
+    // `am start` says it on stdout, with a good exit code, when the activity is not there
+    writeFileSync(adb, '#!/bin/sh\nif [ "$1" = "connect" ]; then echo "connected to $2"; exit 0; fi\necho "Error type 3"\necho "Error: Activity class {x/y} does not exist."\n');
+    await assert.rejects(new TvAdb("10.0.0.9:5555", adb).launchComponent("x/.y"), (e: unknown) => e instanceof TvError && e.status === 404 && /not installed/.test(e.message));
+  });
+
   it("only takes an address as the target", () => {
     for (const bad of ["", "10.0.0.9 -x", "10.0.0.9:5555; rm", "$(id)", "a b"]) assert.throws(() => new TvAdb(bad, adb), /address/, bad);
     assert.doesNotThrow(() => new TvAdb("tv.local:5555", adb));

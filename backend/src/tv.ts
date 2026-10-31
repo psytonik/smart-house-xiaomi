@@ -126,7 +126,9 @@ export class TvRemote {
   }
 
   launch(app: TvApp): void {
-    this.send(remote.appLink(APPS[app].link));
+    const link = APPS[app]?.link;
+    if (!link) throw new TvError("this app opens another way", 400);
+    this.send(remote.appLink(link));
   }
 
   private send(message: Buffer): void {

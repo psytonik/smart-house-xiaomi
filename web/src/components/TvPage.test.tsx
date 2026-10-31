@@ -207,6 +207,7 @@ describe("appName", () => {
     expect(appName("com.google.android.tvlauncher")).toBe("Home");
     expect(appName("com.example.coolplayer")).toBe("Coolplayer");
     expect(appName("org.videolan.vlc")).toBe("Vlc");
+    expect(appName("top.rootu.prisma")).toBe("Prisma");
     expect(appName("com.tcl.ott_play")).toBe("Ott play");
     expect(appName("com.tcl.tvhome")).toBe("Home");
     expect(appName("com.vendor.launcher")).toBe("Home");

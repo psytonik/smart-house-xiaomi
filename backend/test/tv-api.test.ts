@@ -54,7 +54,7 @@ describe("TV API (pretend TV)", () => {
     assert.equal(s.configured, true);
     assert.equal(s.paired, false);
     assert.equal(s.link, "offline");
-    assert.deepEqual(s.apps.map((a: { id: string }) => a.id), ["youtube", "netflix", "prime", "disney", "twitch"]);
+    assert.deepEqual(s.apps.map((a: { id: string }) => a.id), ["youtube", "netflix", "prime", "disney", "twitch"], "an app that needs ADB is not offered without it");
     assert.equal((await post("/api/tv/key", { key: "up" })).statusCode, 503, "not paired: the TV is not answering");
     assert.equal((await post("/api/tv/pair/code", { code: "123456" })).statusCode, 409, "pairing was not started");
   });
@@ -177,6 +177,14 @@ describe("TV API with ADB (pretend TV and adb)", () => {
     assert.equal((await post("/api/tv/key", { key: "input" })).statusCode, 200);
     assert.deepEqual(calls(), ["-s 10.0.0.9:5555 shell input keyevent 178"]);
     assert.equal((await post("/api/tv/key", { key: "up" })).statusCode, 503, "other keys still go over the remote protocol, which is not paired here");
+  });
+
+  it("lists Prisma as an app and opens it over ADB", async () => {
+    const apps = (await app.inject({ url: "/api/tv", headers: auth })).json().apps as Array<{ id: string; label: string }>;
+    assert.deepEqual(apps.map((a) => a.id), ["youtube", "netflix", "prime", "disney", "twitch", "prisma"]);
+    assert.equal(apps.at(-1)!.label, "Prisma");
+    assert.equal((await post("/api/tv/app", { app: "prisma" })).statusCode, 200);
+    assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell am start -n top.rootu.prisma/.ConnectActivity");
   });
 
   it("switches to a source, and refuses one that doesn't exist", async () => {

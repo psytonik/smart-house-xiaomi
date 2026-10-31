@@ -105,7 +105,12 @@ describe("Android TV Remote messages", () => {
   it("has a key for everything the remote shows, and only known apps", () => {
     for (const k of ["power", "home", "back", "up", "down", "left", "right", "ok", "volumeUp", "volumeDown", "mute", "playPause", "input", "hdmi1", "0", "9"]) assert.ok(k in KEYS, k);
     assert.equal(new Set(Object.values(KEYS)).size, KEY_NAMES.length, "no two keys share a code");
-    assert.ok(APP_IDS.every((id) => APPS[id].link.startsWith("https://")));
+    // an app opens either by a link (the remote protocol) or by the component of its launcher (ADB), never by anything free-form
+    for (const id of APP_IDS) {
+      const a = APPS[id] as { link?: string; component?: string };
+      assert.ok(a.link?.startsWith("https://") || /^[A-Za-z0-9._]+\/[A-Za-z0-9._$]+$/.test(a.component ?? ""), id);
+    }
+    assert.ok(APP_IDS.includes("prisma"));
   });
 });
 
