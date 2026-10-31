@@ -60,6 +60,8 @@ npm run dev            # открой http://localhost:3100 и введи API_TO
 | DELETE | `/api/events/:id` | удалить клип |
 | GET | `/api/light` | состояние ленты CozyLife: `on`, `brightness` 0-100, `hue` 0-360, `saturation` 0-100, `temperature` 0-100 (или `configured:false`, `reachable:false`) |
 | POST | `/api/light` | любые из `on`, `brightness`, `hue`, `saturation`, `temperature`; ответ - новое состояние |
+| | `/api/vacuum/…` | пылесос: состояние, команды, настройки, уход, карта, комнаты, расписание, история; полный список в [`docs/vacuum.md`](../docs/vacuum.md#api) |
+| | `/api/tv/…` | телевизор: сопряжение, клавиши, приложения, источники, запущенные приложения; полный список в [`docs/tv.md`](../docs/tv.md#api) |
 
 Прокси пропускает только перечисленные эндпоинты go2rtc и всегда подставляет имя потока из `STREAM_NAME`.
 
@@ -108,6 +110,9 @@ curl -s -H "Authorization: Bearer $T" localhost:3000/api/snapshot -o snap.jpg
 | `PUSH_MIN_INTERVAL_SEC`, `EXPO_ACCESS_TOKEN`, `EXPO_PUSH_URL` | `120`, пусто, Expo | push-уведомления |
 | `AUTH_MAX_FAILURES`, `AUTH_WINDOW_SEC` | `10`, `60` | блокировка подбора токена |
 | `SIGNED_URL_TTL_SEC` | `3600` | срок подписанных ссылок |
+| `VACUUM_IP`, `VACUUM_TOKEN` | пусто | пылесос; без них блок скрыт. Остальные `VACUUM_*` в [`docs/vacuum.md`](../docs/vacuum.md#настройка) |
+| `TV_IP` | пусто | телевизор (Google TV); без него страница `/tv` пишет, как настроить |
+| `TV_ADB`, `TV_ADB_PATH` | пусто | меню источников, источники, приложения вроде Prisma и запущенные приложения через ADB ([`docs/tv.md`](../docs/tv.md#настройка)) |
 
 ## Лента CozyLife
 
@@ -118,6 +123,16 @@ curl -s -H "Authorization: Bearer $T" localhost:3000/api/snapshot -o snap.jpg
 - Бэкенд открывает короткое соединение на каждый запрос, чтобы оставался слот для приложения CozyLife.
 - Найти ленту и посмотреть её состояние, ничего не меняя: `node ../tools/cozylife-probe.cjs`.
 - Режим «музыка» и сцены пока не поддерживаются: в списке параметров ленты их нет, их, видимо, ведёт само приложение.
+
+## Пылесос
+
+Dreame L10 Plus по локальной сети (miIO), облако Xiaomi только для карты, позиции и истории. Подробно: [`docs/vacuum.md`](../docs/vacuum.md), решения: [ADR 0019](../docs/adr/0019-vacuum-page-and-safe-writes.md). Включается `VACUUM_IP` и `VACUUM_TOKEN`. Вход в Xiaomi для карты: `node_modules/.bin/tsx --env-file=.env ../tools/xiaomi-cloud.ts login`.
+
+## Телевизор
+
+TCL (Google TV) по локальной сети: свой клиент Android TV Remote v2 и ADB для меню источников. Подробно: [`docs/tv.md`](../docs/tv.md), решения: [ADR 0017](../docs/adr/0017-tv-remote-own-client.md), [ADR 0018](../docs/adr/0018-tv-source-choice-over-adb.md). Включается `TV_IP`; сопряжение один раз со страницы `/tv`; ADB (`TV_ADB`) необязателен, но без него нет меню источников. Нужен `openssl` для сертификата клиента.
+
+После правок бэкенда его нужно перезапустить, иначе новые маршруты отвечают 404: `launchctl kickstart -k gui/$(id -u)/com.psytonik.xiaomi-camera` (при включённом автозапуске).
 
 ## Дальше
 
