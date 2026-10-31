@@ -20,7 +20,8 @@ export function appName(pkg: string): string {
   if (/(^|\.)(tv)?(home|launcher)x?$/i.test(pkg)) return "Home";
   const parts = pkg.split(".").filter((p) => !["com", "org", "net", "android", "tv", "app", "apps", "google"].includes(p));
   const last = parts.at(-1) ?? pkg;
-  return last.charAt(0).toUpperCase() + last.slice(1);
+  const spaced = last.replace(/[_-]+/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 /** The code is six characters, digits and letters A to F; people type it in any case. */
