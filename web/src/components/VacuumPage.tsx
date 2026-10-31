@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AuthError, fetchVacuumMap, getVacuumCare, getVacuumHistory, getVacuumRooms, getVacuumSchedule, type ScheduledTask, getVacuumSettings, cleanVacuumRooms, type VacuumRoom, refreshVacuumMap, resetVacuumPart, sendVacuumSwitch, type VacuumPartName, type VacuumSettings, type VacuumSwitch, type CleaningMode, type CleaningRecord, type SuctionLevel, type WaterLevel, type PartWear, type VacuumCare } from "../api";
+import { AuthError, fetchVacuumMap, getVacuumCare, getVacuumHistory, getVacuumRooms, getVacuumSchedule, type ScheduledTask, getVacuumSettings, cleanVacuumRooms, type VacuumRoom, refreshVacuumMap, resetVacuumPart, sendVacuumSwitch, sendVacuumVolume, sendVacuumCarpet, sendVacuumAutoEmpty, sendVacuumQuietHours, type VacuumPartName, type VacuumSettings, type VacuumSwitch, type CleaningMode, type CleaningRecord, type SuctionLevel, type WaterLevel, type PartWear, type VacuumCare } from "../api";
 import { Shell } from "./Shell";
 import { useLivePosition } from "../useLivePosition";
 import { useVacuum } from "../useVacuum";
@@ -330,6 +330,56 @@ function Schedule({ onAuthError }: { onAuthError: () => void }) {
   );
 }
 
+/** Volume, sent when the slider has rested for a moment (every step would make the robot talk). */
+function VolumeSlider({ value, disabled, onCommit }: { value: number; disabled: boolean; onCommit: (level: number) => void }) {
+  const [level, setLevel] = useState(value);
+  const timer = useRef<number>(0);
+  useEffect(() => setLevel(value), [value]); // what the robot really has wins
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return (
+    <div className="vpage-levels">
+      <label className="vpage-label slider-label" htmlFor="volume-slider">
+        <span>Volume</span>
+        <output htmlFor="volume-slider">{level}%</output>
+      </label>
+      <input
+        id="volume-slider"
+        className="slider"
+        type="range"
+        min={0}
+        max={100}
+        step={10}
+        value={level}
+        disabled={disabled}
+        onChange={(e) => {
+          const next = Number(e.target.value);
+          setLevel(next);
+          window.clearTimeout(timer.current);
+          timer.current = window.setTimeout(() => next !== value && onCommit(next), 700);
+        }}
+      />
+    </div>
+  );
+}
+
+/** The "do not disturb" hours: two time fields, sent together. */
+function QuietHours({ from, to, disabled, onChange }: { from: string; to: string; disabled: boolean; onChange: (from: string, to: string) => void }) {
+  const pad = (t: string) => t.padStart(5, "0");
+  return (
+    <fieldset className="quiet-hours" disabled={disabled}>
+      <legend className="vpage-label">Quiet hours</legend>
+      <label>
+        From
+        <input type="time" value={pad(from)} onChange={(e) => e.target.value && onChange(e.target.value, pad(to))} />
+      </label>
+      <label>
+        Until
+        <input type="time" value={pad(to)} onChange={(e) => e.target.value && onChange(pad(from), e.target.value)} />
+      </label>
+    </fieldset>
+  );
+}
+
 const SWITCHES: Array<{ name: VacuumSwitch; label: string; hint: string }> = [
   { name: "resumeCleaning", label: "Resume after charging", hint: "If the battery runs low mid-cleaning, it charges and goes on." },
   { name: "carpetBoost", label: "Carpet boost", hint: "Suction goes up on carpets." },
@@ -356,18 +406,20 @@ function RobotSettings({ onAuthError, onError }: { onAuthError: () => void; onEr
   }, [load]);
   if (!settings) return null;
 
-  const flip = async (name: VacuumSwitch, on: boolean) => {
+  /** Sends a change and then shows what the robot really has, also when it refused. */
+  const apply = async (change: () => Promise<void>) => {
     setBusy(true);
     try {
-      await sendVacuumSwitch(name, on);
+      await change();
     } catch (e) {
       if (e instanceof AuthError) onAuthError();
       else onError(e);
     } finally {
       setBusy(false);
-      void load(); // show what the robot really has, also when it refused
+      void load();
     }
   };
+  const flip = (name: VacuumSwitch, on: boolean) => apply(() => sendVacuumSwitch(name, on));
   const value = (name: VacuumSwitch) => (name === "dnd" ? settings.dnd?.enabled : settings[name]);
 
   return (
@@ -392,23 +444,28 @@ function RobotSettings({ onAuthError, onError }: { onAuthError: () => void; onEr
           );
         })}
       </ul>
+      {settings.dnd?.from && settings.dnd.to && (
+        <QuietHours from={settings.dnd.from} to={settings.dnd.to} disabled={busy} onChange={(from, to) => void apply(() => sendVacuumQuietHours(from, to))} />
+      )}
+      {settings.volume !== undefined && <VolumeSlider value={settings.volume} disabled={busy} onCommit={(level) => void apply(() => sendVacuumVolume(level))} />}
+      {settings.carpetSensitivity && (
+        <Choice id="carpet-label" label="Carpet sensitivity" labels={{ low: "Low", medium: "Medium", high: "High" }} value={settings.carpetSensitivity} disabled={busy || settings.carpetBoost === false} onPick={(l) => void apply(() => sendVacuumCarpet(l))} />
+      )}
+      {settings.autoEmptyFrequency !== undefined && [1, 2, 3].includes(settings.autoEmptyFrequency) && (
+        <Choice
+          id="auto-empty-label"
+          label="The dock empties the bin"
+          labels={{ "1": "After every cleaning", "2": "After 2", "3": "After 3" }}
+          value={String(settings.autoEmptyFrequency) as "1" | "2" | "3"}
+          disabled={busy}
+          onPick={(k) => void apply(() => sendVacuumAutoEmpty(Number(k) as 1 | 2 | 3))}
+        />
+      )}
       <dl className="vpage-facts">
         {settings.customizedCleaning !== undefined && (
           <div>
             <dt>Customized cleaning</dt>
             <dd>{settings.customizedCleaning ? "On, suction and water are kept per room" : "Off"}</dd>
-          </div>
-        )}
-        {settings.carpetSensitivity && (
-          <div>
-            <dt>Carpet sensitivity</dt>
-            <dd>{settings.carpetSensitivity[0]!.toUpperCase() + settings.carpetSensitivity.slice(1)}</dd>
-          </div>
-        )}
-        {settings.volume !== undefined && (
-          <div>
-            <dt>Volume</dt>
-            <dd>{settings.volume}%</dd>
           </div>
         )}
       </dl>

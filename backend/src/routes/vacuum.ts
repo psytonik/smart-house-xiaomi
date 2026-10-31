@@ -9,7 +9,7 @@ import { CloudError, deviceData, downloadCloudFile, idsFromObjectName } from "..
 import { LevelKeeper } from "../vacuumLevels.js";
 import { roomsOf, type Room } from "../vacuumRooms.js";
 import { VacuumWatcher } from "../vacuumWatcher.js";
-import { CLEANING_MODE_NAMES, parseCleaningRecord, SUCTION_NAMES, Vacuum, SETTING_NAMES, VACUUM_ACTIONS, VACUUM_PARTS, WATER_NAMES, type CleaningMode, type SuctionLevel, type SettingName, type VacuumAction, type VacuumPart, type WaterLevel } from "../vacuum.js";
+import { CARPET_SENSITIVITY_NAMES, CLEANING_MODE_NAMES, parseCleaningRecord, SUCTION_NAMES, Vacuum, SETTING_NAMES, VACUUM_ACTIONS, VACUUM_PARTS, WATER_NAMES, type CleaningMode, type SuctionLevel, type SettingName, type VacuumAction, type VacuumPart, type WaterLevel } from "../vacuum.js";
 
 /** Robot vacuum over the local network. Configured with VACUUM_IP and VACUUM_TOKEN (backend/.env). */
 export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.ProcessEnv = process.env): void {
@@ -125,6 +125,39 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
       }
       return { ok: true };
     },
+  );
+
+  // Volume, carpet sensitivity, how often the dock empties the bin, and the quiet hours. Each is read back; 502 with the reason when the robot didn't take it.
+  const TIME = "^([01][0-9]|2[0-3]):[0-5][0-9]$";
+  const guarded = async (change: (robot: Vacuum) => Promise<void>) => {
+    if (!vacuum) throw new HttpError(404, "vacuum is not configured (set VACUUM_IP and VACUUM_TOKEN)");
+    try {
+      await change(vacuum);
+    } catch (e) {
+      if (e instanceof MiioError) throw new HttpError(502, e.message);
+      throw e;
+    }
+    return { ok: true };
+  };
+  app.post<{ Body: { level: number } }>(
+    "/api/vacuum/volume",
+    { schema: { body: { type: "object", additionalProperties: false, required: ["level"], properties: { level: { type: "integer", minimum: 0, maximum: 100 } } } } },
+    (req) => guarded((v) => v.setVolume(req.body.level)),
+  );
+  app.post<{ Body: { level: (typeof CARPET_SENSITIVITY_NAMES)[number] } }>(
+    "/api/vacuum/carpet",
+    { schema: { body: { type: "object", additionalProperties: false, required: ["level"], properties: { level: { type: "string", enum: CARPET_SENSITIVITY_NAMES } } } } },
+    (req) => guarded((v) => v.setCarpetSensitivity(req.body.level)),
+  );
+  app.post<{ Body: { every: 1 | 2 | 3 } }>(
+    "/api/vacuum/auto-empty",
+    { schema: { body: { type: "object", additionalProperties: false, required: ["every"], properties: { every: { type: "integer", enum: [1, 2, 3] } } } } },
+    (req) => guarded((v) => v.setAutoEmptyFrequency(req.body.every)),
+  );
+  app.post<{ Body: { from: string; to: string } }>(
+    "/api/vacuum/dnd-hours",
+    { schema: { body: { type: "object", additionalProperties: false, required: ["from", "to"], properties: { from: { type: "string", pattern: TIME }, to: { type: "string", pattern: TIME } } } } },
+    (req) => guarded((v) => v.setQuietHours(req.body.from, req.body.to)),
   );
 
   // After changing a brush or the filter: its wear counter starts again from 100%.

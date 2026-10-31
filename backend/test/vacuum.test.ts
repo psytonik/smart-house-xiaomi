@@ -393,6 +393,45 @@ describe("vacuum API (mock device)", () => {
     store["8/2"] = "";
   });
 
+  it("changes volume, carpet sensitivity, auto-empty frequency and the quiet hours, reading each back", async () => {
+    const post = (path: string, payload: Record<string, unknown>) => app.inject({ method: "POST", url: `/api/vacuum/${path}`, headers: auth, payload });
+
+    const before = actions.length;
+    assert.equal((await post("volume", { level: 40 })).statusCode, 200);
+    assert.deepEqual(sets.at(-1), [{ did: "x", siid: 7, piid: 1, value: 40 }]);
+    assert.deepEqual([actions.at(-1).siid, actions.at(-1).aiid], [7, 2], "the robot says something at the new volume");
+    assert.equal(actions.length, before + 1);
+    assert.equal((await app.inject({ url: "/api/vacuum/settings", headers: auth })).json().volume, 40);
+    for (const level of [-1, 101, 5.5, "loud"]) assert.equal((await post("volume", { level })).statusCode, 400, `volume ${level}`);
+    await post("volume", { level: 100 });
+
+    assert.equal((await post("carpet", { level: "medium" })).statusCode, 200);
+    assert.deepEqual(sets.at(-1), [{ did: "x", siid: 4, piid: 28, value: 2 }]);
+    assert.equal((await app.inject({ url: "/api/vacuum/settings", headers: auth })).json().carpetSensitivity, "medium");
+    assert.equal((await post("carpet", { level: "max" })).statusCode, 400);
+    await post("carpet", { level: "high" });
+
+    assert.equal((await post("auto-empty", { every: 3 })).statusCode, 200);
+    assert.deepEqual(sets.at(-1), [{ did: "x", siid: 15, piid: 2, value: 3 }]);
+    assert.equal((await app.inject({ url: "/api/vacuum/settings", headers: auth })).json().autoEmptyFrequency, 3);
+    for (const every of [0, 4, "2x"]) assert.equal((await post("auto-empty", { every })).statusCode, 400, `every ${every}`);
+    await post("auto-empty", { every: 2 });
+
+    assert.equal((await post("dnd-hours", { from: "21:30", to: "07:00" })).statusCode, 200);
+    assert.deepEqual(sets.slice(-2).map((x) => x[0]), [{ did: "x", siid: 5, piid: 2, value: "21:30" }, { did: "x", siid: 5, piid: 3, value: "07:00" }]);
+    assert.deepEqual((await app.inject({ url: "/api/vacuum/settings", headers: auth })).json().dnd, { enabled: true, from: "21:30", to: "07:00" });
+    const count = sets.length;
+    for (const bad of [{ from: "25:00", to: "07:00" }, { from: "9:5", to: "07:00" }, { from: "21:30" }, { from: "21:30", to: "07:60" }]) assert.equal((await post("dnd-hours", bad)).statusCode, 400, JSON.stringify(bad));
+    assert.equal(sets.length, count, "nothing was written for a bad time");
+    await post("dnd-hours", { from: "22:00", to: "08:00" });
+
+    keepsOldSetting = true;
+    const refused = await post("carpet", { level: "low" });
+    keepsOldSetting = false;
+    assert.equal(refused.statusCode, 502);
+    assert.match(refused.json().error, /kept its old setting/);
+  });
+
   it("refuses anything that is not a known action", async () => {
     for (const payload of [{}, { action: "empty-bin" }, { action: 3 }]) {
       const res = await app.inject({ method: "POST", url: "/api/vacuum", headers: auth, payload });

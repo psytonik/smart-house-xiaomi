@@ -109,6 +109,7 @@ export const SETTING_NAMES = Object.keys(SWITCHES) as SettingName[];
 
 /** MIoT 4/28. */
 const CARPET_SENSITIVITY_VALUE = { low: 1, medium: 2, high: 3 } as const;
+export const CARPET_SENSITIVITY_NAMES = Object.keys(CARPET_SENSITIVITY_VALUE) as Array<keyof typeof CARPET_SENSITIVITY_VALUE>;
 
 export interface ScheduledTask {
   id: number;
@@ -384,6 +385,27 @@ export class Vacuum {
     return out;
   }
 
+  /** 0..100. The robot says something at the new volume, so you hear it (best effort: a robot that stays quiet is not an error). */
+  async setVolume(level: number): Promise<void> {
+    await this.setChecked(7, 1, level, `volume ${level}`);
+    await this.device.call("action", { did: "x", siid: 7, aiid: 2, in: [] }).catch(() => undefined);
+  }
+
+  async setCarpetSensitivity(level: keyof typeof CARPET_SENSITIVITY_VALUE): Promise<void> {
+    await this.setChecked(4, 28, CARPET_SENSITIVITY_VALUE[level], `carpet sensitivity ${level}`);
+  }
+
+  /** How often the dock empties the bin by itself: after every cleaning, every second or every third (MIoT 15/2). */
+  async setAutoEmptyFrequency(every: 1 | 2 | 3): Promise<void> {
+    await this.setChecked(15, 2, every, `auto-empty after every ${every === 1 ? "cleaning" : every === 2 ? "second cleaning" : "third cleaning"}`);
+  }
+
+  /** "Do not disturb" hours, "HH:MM" each (MIoT 5/2 and 5/3). */
+  async setQuietHours(from: string, to: string): Promise<void> {
+    await this.setChecked(5, 2, from, `quiet hours from ${from}`);
+    await this.setChecked(5, 3, to, `quiet hours until ${to}`);
+  }
+
   /** Switches one of the robot's settings on or off and reads it back. */
   async setSetting(name: SettingName, on: boolean): Promise<void> {
     const s = SWITCHES[name];
@@ -391,7 +413,7 @@ export class Vacuum {
   }
 
   /** Sets a property and reads it back: a robot using "Customized Cleaning" says yes and keeps its old value. */
-  private async setChecked(siid: number, piid: number, value: number | boolean, what: string): Promise<void> {
+  private async setChecked(siid: number, piid: number, value: number | boolean | string, what: string): Promise<void> {
     const rows = (await this.device.call("set_properties", [{ did: "x", siid, piid, value }])) as Array<{ code?: number }> | undefined;
     if (!rows?.length || rows.some((r) => r.code !== undefined && r.code !== 0)) throw new MiioError(`the vacuum could not switch to ${what}`);
     const back = (await this.device.call("get_properties", [{ did: "x", siid, piid }])) as Array<{ code?: number; value?: number }> | undefined;

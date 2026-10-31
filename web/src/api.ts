@@ -411,6 +411,19 @@ export async function getVacuumSchedule(): Promise<ScheduledTask[]> {
   return ((await res.json()) as { tasks: ScheduledTask[] }).tasks;
 }
 
+async function postValue(path: string, body: object, fallback: string): Promise<void> {
+  const res = await api(`/api/vacuum/${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(await errorText(res, fallback));
+}
+
+/** 0..100. The robot says something at the new volume. */
+export const sendVacuumVolume = (level: number) => postValue("volume", { level }, "Couldn't change the volume");
+export const sendVacuumCarpet = (level: "low" | "medium" | "high") => postValue("carpet", { level }, "Couldn't change the carpet sensitivity");
+/** How often the dock empties the bin by itself: after every 1st, 2nd or 3rd cleaning. */
+export const sendVacuumAutoEmpty = (every: 1 | 2 | 3) => postValue("auto-empty", { every }, "Couldn't change how often the dock empties the bin");
+/** "HH:MM" each. */
+export const sendVacuumQuietHours = (from: string, to: string) => postValue("dnd-hours", { from, to }, "Couldn't change the quiet hours");
+
 export type VacuumSwitch = "resumeCleaning" | "carpetBoost" | "obstacleAvoidance" | "childLock" | "dnd";
 
 /** The robot's own settings. Whatever it doesn't report is missing. */

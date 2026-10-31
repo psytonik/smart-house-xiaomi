@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api";
 import { FloorPlan, VacuumPage } from "./VacuumPage";
 
-vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getVacuum: vi.fn(), sendVacuum: vi.fn(), fetchVacuumMap: vi.fn(), refreshVacuumMap: vi.fn(), getVacuumLive: vi.fn(), sendCleaningMode: vi.fn(), getVacuumCare: vi.fn(), getVacuumHistory: vi.fn(), resetVacuumPart: vi.fn(), getVacuumSettings: vi.fn(), getVacuumRooms: vi.fn(), getVacuumSchedule: vi.fn(), cleanVacuumRooms: vi.fn(), sendVacuumSwitch: vi.fn(), sendSuction: vi.fn(), sendWater: vi.fn() }));
+vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getVacuum: vi.fn(), sendVacuum: vi.fn(), fetchVacuumMap: vi.fn(), refreshVacuumMap: vi.fn(), getVacuumLive: vi.fn(), sendCleaningMode: vi.fn(), getVacuumCare: vi.fn(), getVacuumHistory: vi.fn(), resetVacuumPart: vi.fn(), getVacuumSettings: vi.fn(), getVacuumRooms: vi.fn(), getVacuumSchedule: vi.fn(), sendVacuumVolume: vi.fn(), sendVacuumCarpet: vi.fn(), sendVacuumAutoEmpty: vi.fn(), sendVacuumQuietHours: vi.fn(), cleanVacuumRooms: vi.fn(), sendVacuumSwitch: vi.fn(), sendSuction: vi.fn(), sendWater: vi.fn() }));
 
 describe("VacuumPage", () => {
   beforeEach(() => {
@@ -16,6 +16,10 @@ describe("VacuumPage", () => {
     vi.mocked(api.getVacuumSettings).mockRejectedValue(new Error("no settings"));
     vi.mocked(api.getVacuumRooms).mockResolvedValue([]);
     vi.mocked(api.getVacuumSchedule).mockResolvedValue([]);
+    vi.mocked(api.sendVacuumVolume).mockResolvedValue();
+    vi.mocked(api.sendVacuumCarpet).mockResolvedValue();
+    vi.mocked(api.sendVacuumAutoEmpty).mockResolvedValue();
+    vi.mocked(api.sendVacuumQuietHours).mockResolvedValue();
     vi.mocked(api.cleanVacuumRooms).mockResolvedValue();
     vi.mocked(api.sendVacuumSwitch).mockResolvedValue();
     vi.mocked(api.getVacuumHistory).mockRejectedValue(new Error("no history"));
@@ -249,6 +253,41 @@ describe("VacuumPage", () => {
     expect(screen.getByText("5 days a week, off")).toBeTruthy();
     expect(screen.getByText("Once")).toBeTruthy();
     expect(screen.getByText("07:30")).toBeTruthy();
+  });
+
+  it("changes carpet sensitivity, how often the dock empties the bin, and the quiet hours", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    vi.mocked(api.getVacuumSettings).mockResolvedValue({ carpetBoost: true, carpetSensitivity: "high", autoEmptyFrequency: 2, dnd: { enabled: true, from: "22:00", to: "08:00" }, volume: 100 });
+    render(<VacuumPage onLogout={() => {}} />);
+    fireEvent.click(await screen.findByRole("radio", { name: "Medium" }, { timeout: 3000 }));
+    await waitFor(() => expect(api.sendVacuumCarpet).toHaveBeenCalledWith("medium"));
+    expect(screen.getByRole("radio", { name: "After 2" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("radio", { name: "After 3" }));
+    await waitFor(() => expect(api.sendVacuumAutoEmpty).toHaveBeenCalledWith(3));
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "21:30" } });
+    await waitFor(() => expect(api.sendVacuumQuietHours).toHaveBeenCalledWith("21:30", "08:00"));
+    fireEvent.change(screen.getByLabelText("Until"), { target: { value: "07:00" } });
+    await waitFor(() => expect(api.sendVacuumQuietHours).toHaveBeenCalledWith("22:00", "07:00"));
+  });
+
+  it("sends the volume once the slider has rested, not on every step", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    vi.mocked(api.getVacuumSettings).mockResolvedValue({ volume: 100 });
+    render(<VacuumPage onLogout={() => {}} />);
+    const slider = (await screen.findByRole("slider", { name: /Volume/ })) as HTMLInputElement;
+    fireEvent.change(slider, { target: { value: "70" } });
+    fireEvent.change(slider, { target: { value: "40" } });
+    expect(screen.getByText("40%")).toBeTruthy();
+    expect(api.sendVacuumVolume).not.toHaveBeenCalled();
+    await waitFor(() => expect(api.sendVacuumVolume).toHaveBeenCalledWith(40), { timeout: 2000 });
+    expect(api.sendVacuumVolume).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not let carpet sensitivity be set while carpet boost is off", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    vi.mocked(api.getVacuumSettings).mockResolvedValue({ carpetBoost: false, carpetSensitivity: "low" });
+    render(<VacuumPage onLogout={() => {}} />);
+    expect(((await screen.findByRole("radio", { name: "Medium" })) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("has no empty button for a robot without a dust station", async () => {
