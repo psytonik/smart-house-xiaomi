@@ -546,6 +546,8 @@ export interface TvState {
   /** Android package of the app in front. */
   app?: string;
   apps?: Array<{ id: string; label: string }>;
+  /** The TV's own source menu and inputs can be reached (over ADB). */
+  adb?: boolean;
 }
 
 export async function getTv(): Promise<TvState> {
@@ -559,6 +561,13 @@ async function postTv(path: string, body: object, fallback: string): Promise<voi
   if (!res.ok) throw new Error(await errorText(res, fallback));
 }
 
+/** What the TV's own Source Choice offers: Home, TV, HDMI 1, HDMI 2, AV, Media Player. */
+export async function getTvSources(): Promise<Array<{ id: string; label: string }>> {
+  const res = await api("/api/tv/sources");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the TV's sources"));
+  return ((await res.json()) as { sources: Array<{ id: string; label: string }> }).sources;
+}
+export const switchTvSource = (source: string) => postTv("source", { source }, "Couldn't switch the source");
 export const sendTvKey = (key: TvKey) => postTv("key", { key }, "The TV didn't take that");
 export const launchTvApp = (app: string) => postTv("app", { app }, "Couldn't open the app");
 /** Asks the TV to show its pairing code. */

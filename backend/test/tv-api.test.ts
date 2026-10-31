@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -124,6 +124,87 @@ describe("TV API without a TV", () => {
       rmSync(dir, { recursive: true, force: true });
       if (saved === undefined) delete process.env.TV_IP;
       else process.env.TV_IP = saved;
+    }
+  });
+});
+
+describe("TV API with ADB (pretend TV and adb)", () => {
+  let tv: Awaited<ReturnType<typeof startFakeTv>>;
+  let dir: string;
+  let log: string;
+  let app: Awaited<ReturnType<typeof buildApp>>;
+  const saved = { ...process.env };
+  const calls = () => (existsSync(log) ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean) : []);
+  const post = (url: string, payload: Record<string, unknown> = {}) => app.inject({ method: "POST", url, headers: auth, payload });
+
+  before(async () => {
+    tv = await startFakeTv();
+    dir = mkdtempSync(join(tmpdir(), "tv-adb-api-"));
+    log = join(dir, "calls.log");
+    const dump = [
+      "    1413742848: Connection{ mHardwareInfo: TvInputHardwareInfo {id=1413742848, type=2, audio_addr=1}",
+      "    1413744128: Connection{ mHardwareInfo: TvInputHardwareInfo {id=1413744128, type=9, audio_addr=1, hdmi_port=1}",
+      "  mHardwareInputIdMap: deviceId -> inputId",
+      "    1413742848: com.tcl.tvinput/.TDTVInputService/HW1413742848",
+      "    1413744128: com.tcl.tvinput/.passthroughinput.TvPassThroughService/HW1413744128",
+    ].join("\n");
+    writeFileSync(join(dir, "dump.txt"), dump);
+    const adb = join(dir, "adb");
+    writeFileSync(adb, `#!/bin/sh\nif [ "$1" = "connect" ]; then echo "connected to $2"; exit 0; fi\nif [ "$4" = "dumpsys" ]; then cat "${dir}/dump.txt"; exit 0; fi\nif [ "$4" = "pm" ]; then exit 0; fi\necho "$@" >> "${log}"\n`);
+    chmodSync(adb, 0o755);
+    process.env.TV_IP = "127.0.0.1";
+    process.env.TV_REMOTE_PORT = String(tv.remotePort);
+    process.env.TV_PAIRING_PORT = String(tv.pairingPort);
+    process.env.TV_ADB = "10.0.0.9:5555";
+    process.env.TV_ADB_PATH = adb;
+    app = await buildApp(testConfig({ dataDir: dir, apiToken: API }));
+  });
+  after(async () => {
+    await app.close();
+    await tv.close();
+    rmSync(dir, { recursive: true, force: true });
+    process.env = { ...saved };
+  });
+
+  it("says ADB is available, and what sources the TV has", async () => {
+    assert.equal((await app.inject({ url: "/api/tv", headers: auth })).json().adb, true);
+    const res = await app.inject({ url: "/api/tv/sources", headers: auth });
+    assert.deepEqual(res.json().sources, [{ id: "home", label: "Home" }, { id: "tv", label: "TV" }, { id: "hdmi1", label: "HDMI 1" }]);
+    assert.equal((await app.inject({ url: "/api/tv/sources" })).statusCode, 401);
+  });
+
+  it("opens Source Choice from the Input key, even when the remote link is not up", async () => {
+    assert.equal((await post("/api/tv/key", { key: "input" })).statusCode, 200);
+    assert.deepEqual(calls(), ["-s 10.0.0.9:5555 shell input keyevent 178"]);
+    assert.equal((await post("/api/tv/key", { key: "up" })).statusCode, 503, "other keys still go over the remote protocol, which is not paired here");
+  });
+
+  it("switches to a source, and refuses one that doesn't exist", async () => {
+    assert.equal((await post("/api/tv/source", { source: "hdmi1" })).statusCode, 200);
+    assert.ok(calls().at(-1)!.includes("passthrough/com.tcl.tvinput%2F.passthroughinput.TvPassThroughService%2FHW1413744128"));
+    const before = calls().length;
+    assert.equal((await post("/api/tv/source", { source: "hdmi4" })).statusCode, 400);
+    for (const bad of [{}, { source: "" }, { source: "HDMI1" }, { source: "a b" }, { source: "x;reboot" }]) assert.equal((await post("/api/tv/source", bad)).statusCode, 400, JSON.stringify(bad));
+    assert.equal(calls().length, before, "nothing was sent for a bad source");
+  });
+});
+
+describe("TV API with ADB set but unusable", () => {
+  it("leaves ADB off and the Input key as it was", async () => {
+    const saved = { ...process.env };
+    process.env.TV_IP = "127.0.0.1";
+    process.env.TV_ADB = "10.0.0.9:5555";
+    process.env.TV_ADB_PATH = "/no/such/adb";
+    const dir = mkdtempSync(join(tmpdir(), "tv-adb-off-"));
+    const app = await buildApp(testConfig({ dataDir: dir, apiToken: API }));
+    try {
+      assert.equal((await app.inject({ url: "/api/tv", headers: auth })).json().adb, false);
+      assert.equal((await app.inject({ url: "/api/tv/sources", headers: auth })).statusCode, 404);
+      assert.equal((await app.inject({ method: "POST", url: "/api/tv/source", headers: auth, payload: { source: "tv" } })).statusCode, 404);
+    } finally {
+      await app.close();
+      rmSync(dir, { recursive: true, force: true });
+      process.env = { ...saved };
     }
   });
 });

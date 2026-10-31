@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { AppContext } from "../context.js";
 import { HttpError } from "../go2rtc.js";
 import { TvError, TvRemote } from "../tv.js";
+import { findAdb, TvAdb } from "../tvAdb.js";
 import { APPS, APP_IDS, KEY_NAMES, type TvApp, type TvKey } from "../tv/messages.js";
 
 /** A Google TV / Android TV (TCL and others) on the local network, as a remote control. Configured with TV_IP (backend/.env). */
@@ -25,6 +26,19 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
     }
   }
 
+  // The TV's own "Source Choice" menu and its inputs go over ADB (TV_ADB=host:5555): a TCL ignores them on the remote protocol.
+  let adb: TvAdb | undefined;
+  const adbTarget = env.TV_ADB?.trim();
+  if (adbTarget) {
+    const path = findAdb(env);
+    try {
+      if (!path) throw new Error("adb was not found (install it, or set TV_ADB_PATH)");
+      adb = new TvAdb(adbTarget, path, (m) => app.log.info(m));
+    } catch (e) {
+      app.log.warn(`tv adb disabled: ${(e as Error).message}`);
+    }
+  }
+
   const need = (): TvRemote => {
     if (!tv) throw new HttpError(404, "the TV is not configured (set TV_IP in backend/.env)");
     return tv;
@@ -41,7 +55,28 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
 
   const apps = APP_IDS.map((id) => ({ id, label: APPS[id].label }));
 
-  app.get("/api/tv", async () => (tv ? { configured: true, ...tv.status(), apps } : { configured: false }));
+  app.get("/api/tv", async () => (tv ? { configured: true, ...tv.status(), apps, adb: adb !== undefined } : { configured: false }));
+
+  // What the TV's Source Choice offers (Home, TV, HDMI 1, HDMI 2, AV, Media Player), found out from the TV itself.
+  app.get("/api/tv/sources", async () => {
+    if (!adb) throw new HttpError(404, "sources need ADB: set TV_ADB (the TV's address and port 5555) in backend/.env");
+    const robot = adb;
+    let sources: Awaited<ReturnType<TvAdb["sources"]>> = [];
+    await guarded(async () => {
+      sources = await robot.sources();
+    });
+    return { sources };
+  });
+
+  app.post<{ Body: { source: string } }>(
+    "/api/tv/source",
+    { schema: { body: { type: "object", additionalProperties: false, required: ["source"], properties: { source: { type: "string", pattern: "^[a-z0-9]{1,16}$" } } } } },
+    (req) => {
+      const robot = adb;
+      if (!robot) throw new HttpError(404, "sources need ADB: set TV_ADB (the TV's address and port 5555) in backend/.env");
+      return guarded(() => robot.switchTo(req.body.source));
+    },
+  );
 
   // Pairing: the TV shows a six-character code; the person types it in. Done once.
   app.post("/api/tv/pair", () => guarded(() => need().beginPairing()));
@@ -55,7 +90,11 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
   app.post<{ Body: { key: TvKey } }>(
     "/api/tv/key",
     { schema: { body: { type: "object", additionalProperties: false, required: ["key"], properties: { key: { type: "string", enum: KEY_NAMES } } } } },
-    (req) => guarded(() => need().press(req.body.key)),
+    (req) => {
+      // the INPUT key of this app opens the TV's own Source Choice, which only ADB can reach
+      if (req.body.key === "input" && adb) return guarded(() => adb!.openSourceMenu());
+      return guarded(() => need().press(req.body.key));
+    },
   );
 
   app.post<{ Body: { app: TvApp } }>(

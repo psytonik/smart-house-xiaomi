@@ -4,7 +4,7 @@ import * as api from "../api";
 import { TvPage } from "./TvPage";
 import { appName } from "./tvText";
 
-vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getTv: vi.fn(), sendTvKey: vi.fn(), launchTvApp: vi.fn(), startTvPairing: vi.fn(), sendTvCode: vi.fn(), cancelTvPairing: vi.fn() }));
+vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getTv: vi.fn(), sendTvKey: vi.fn(), launchTvApp: vi.fn(), startTvPairing: vi.fn(), getTvSources: vi.fn(), switchTvSource: vi.fn(), sendTvCode: vi.fn(), cancelTvPairing: vi.fn() }));
 
 const APPS = [{ id: "youtube", label: "YouTube" }, { id: "netflix", label: "Netflix" }];
 const ready = (extra: Partial<api.TvState> = {}): api.TvState => ({ configured: true, paired: true, link: "ready", powered: true, volume: { level: 35, max: 100, muted: false }, app: "com.google.android.youtube.tv", apps: APPS, ...extra });
@@ -16,6 +16,8 @@ describe("TvPage", () => {
     vi.mocked(api.startTvPairing).mockResolvedValue();
     vi.mocked(api.sendTvCode).mockResolvedValue();
     vi.mocked(api.cancelTvPairing).mockResolvedValue();
+    vi.mocked(api.getTvSources).mockResolvedValue([]);
+    vi.mocked(api.switchTvSource).mockResolvedValue();
   });
   afterEach(() => {
     cleanup();
@@ -111,6 +113,50 @@ describe("TvPage", () => {
     fireEvent.pointerDown(screen.getByRole("button", { name: "Back" }));
     fireEvent.click(screen.getByRole("button", { name: "Back" }), { detail: 1 });
     expect(vi.mocked(api.sendTvKey).mock.calls.filter((c) => c[0] === "back")).toHaveLength(1);
+  });
+
+  it("lists the TV's own sources and switches to one, with the Input key still working when the remote link is down", async () => {
+    vi.mocked(api.getTv).mockResolvedValue(ready({ link: "offline", powered: undefined, app: undefined, volume: undefined, adb: true }));
+    vi.mocked(api.getTvSources).mockResolvedValue([{ id: "home", label: "Home" }, { id: "tv", label: "TV" }, { id: "hdmi1", label: "HDMI 1" }, { id: "hdmi2", label: "HDMI 2" }, { id: "av", label: "AV" }, { id: "media", label: "Media Player" }]);
+    render(<TvPage onLogout={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "HDMI 2" }));
+    await waitFor(() => expect(api.switchTvSource).toHaveBeenCalledWith("hdmi2"));
+    expect(screen.getByRole("button", { name: "Media Player" })).toBeTruthy();
+    // the keys that need the remote link are locked, Input is not: it goes another way
+    expect((screen.getByRole("button", { name: "Up" }) as HTMLButtonElement).disabled).toBe(true);
+    const input = screen.getByRole("button", { name: "Input: open Source Choice" }) as HTMLButtonElement;
+    expect(input.disabled).toBe(false);
+    fireEvent.click(input);
+    await waitFor(() => expect(api.sendTvKey).toHaveBeenCalledWith("input"));
+  });
+
+  it("says why a source could not be read or switched", async () => {
+    vi.mocked(api.getTv).mockResolvedValue(ready({ adb: true }));
+    vi.mocked(api.getTvSources).mockResolvedValue([{ id: "hdmi1", label: "HDMI 1" }]);
+    vi.mocked(api.switchTvSource).mockRejectedValue(new Error("could not reach the TV over ADB (is network debugging on?)"));
+    render(<TvPage onLogout={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "HDMI 1" }));
+    expect(await screen.findByText(/over ADB/)).toBeTruthy();
+
+    cleanup();
+    vi.mocked(api.getTvSources).mockRejectedValue(new Error("the TV has not authorised this computer for ADB: accept the prompt on the TV"));
+    render(<TvPage onLogout={() => {}} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("not authorised");
+  });
+
+  it("without ADB there is no Sources card, and the old source keys are offered with a warning", async () => {
+    vi.mocked(api.getTv).mockResolvedValue(ready());
+    render(<TvPage onLogout={() => {}} />);
+    await screen.findByText("Connected");
+    expect(screen.queryByText("Sources")).toBeNull();
+    expect(api.getTvSources).not.toHaveBeenCalled();
+    expect(screen.getByText(/Source keys \(not every TV takes them\)/)).toBeTruthy();
+
+    cleanup();
+    vi.mocked(api.getTv).mockResolvedValue(ready({ adb: true }));
+    render(<TvPage onLogout={() => {}} />);
+    await screen.findByText("Connected");
+    expect(screen.queryByText(/Source keys/)).toBeNull();
   });
 
   describe("pairing", () => {

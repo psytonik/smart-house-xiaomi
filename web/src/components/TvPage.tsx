@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { AuthError, cancelTvPairing, getTv, launchTvApp, sendTvCode, sendTvKey, startTvPairing, type TvKey, type TvState } from "../api";
+import { AuthError, cancelTvPairing, getTv, getTvSources, launchTvApp, sendTvCode, sendTvKey, startTvPairing, switchTvSource, type TvKey, type TvState } from "../api";
 import { Shell } from "./Shell";
 import { CODE_PATTERN, appName } from "./tvText";
 
@@ -90,11 +90,12 @@ export function TvPage({ onLogout }: { onLogout: () => void }) {
           <div className="vgrid tv-grid">
             <div className="vcol">
               <Status state={state} press={press} />
-              <Remote ready={ready} press={press} />
+              <Remote ready={ready} press={press} adb={state.adb === true} />
             </div>
             <div className="vcol">
+              {state.adb && <Sources onError={fail} onAuthError={onLogout} />}
               <Apps state={state} ready={ready} onError={fail} />
-              <MoreKeys ready={ready} press={press} />
+              <MoreKeys ready={ready} press={press} adb={state.adb === true} />
               <section className="vcard tv-pair-again">
                 <details>
                   <summary>Pair again</summary>
@@ -186,10 +187,11 @@ const ARROW = {
   right: "M18 12l-8 6V6z",
 };
 
-function Remote({ ready, press }: { ready: boolean; press: (key: TvKey) => void }) {
+function Remote({ ready, press, adb }: { ready: boolean; press: (key: TvKey) => void; adb: boolean }) {
   const off = !ready;
   const k = (key: TvKey, label: string, body: ReactNode, extra: { hold?: boolean; className?: string } = {}) => (
-    <Key k={key} label={label} press={press} disabled={off} {...extra}>
+    // the Input key opens the TV's own Source Choice over ADB, which does not need the remote link
+    <Key k={key} label={label} press={press} disabled={key === "input" && adb ? false : off} {...extra}>
       {body}
     </Key>
   );
@@ -198,7 +200,7 @@ function Remote({ ready, press }: { ready: boolean; press: (key: TvKey) => void 
       <div className="tv-row tv-row-3">
         {k("back", "Back", <><Icon d="M9 7 4 12l5 5M4 12h11a5 5 0 0 1 5 5v1" /><span>Back</span></>)}
         {k("home", "Home", <><Icon d="M4 11l8-7 8 7M6 10v9h12v-9" /><span>Home</span></>)}
-        {k("input", "Input", <><Icon d="M4 8h12M4 8l3-3M4 8l3 3M20 16H8M20 16l-3-3M20 16l-3 3" /><span>Input</span></>)}
+        {k("input", adb ? "Input: open Source Choice" : "Input", <><Icon d="M4 8h12M4 8l3-3M4 8l3 3M20 16H8M20 16l-3-3M20 16l-3 3" /><span>Input</span></>)}
       </div>
 
       <div className="tv-middle">
@@ -264,11 +266,58 @@ function Apps({ state, ready, onError }: { state: TvState; ready: boolean; onErr
   );
 }
 
+/** The TV's own Source Choice, one button per source it really has (found out from the TV). */
+function Sources({ onError, onAuthError }: { onError: (e: unknown) => void; onAuthError: () => void }) {
+  const [sources, setSources] = useState<Array<{ id: string; label: string }> | null>(null);
+  const [problem, setProblem] = useState("");
+  const [switching, setSwitching] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getTvSources()
+      .then((s) => alive && setSources(s))
+      .catch((e) => {
+        if (e instanceof AuthError) onAuthError();
+        else if (alive) setProblem(e instanceof Error ? e.message : "Couldn't read the TV's sources");
+      });
+    return () => {
+      alive = false;
+    };
+  }, [onAuthError]);
+  if (!sources && !problem) return null;
+  return (
+    <section className="vcard" aria-labelledby="tv-sources-title">
+      <h2 id="tv-sources-title">Sources</h2>
+      {sources && (
+        <ul className="tv-apps">
+          {sources.map((s) => (
+            <li key={s.id}>
+              <button
+                type="button"
+                disabled={switching !== null}
+                onClick={() => {
+                  setSwitching(s.id);
+                  switchTvSource(s.id)
+                    .catch(onError)
+                    .finally(() => setSwitching(null));
+                }}
+              >
+                {s.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {problem && <p className="pair-problem" role="alert">{problem}</p>}
+      <p className="hint tv-keys-hint">The Input button opens the TV's own Source Choice list. Move in it with the arrows and OK.</p>
+    </section>
+  );
+}
+
 const NUMBERS: TvKey[] = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
 const COLOURS: Array<[TvKey, string]> = [["red", "Red"], ["green", "Green"], ["yellow", "Yellow"], ["blue", "Blue"]];
 const OTHERS: Array<[TvKey, string]> = [["info", "Info"], ["menu", "Menu"], ["settings", "Settings"], ["search", "Search"], ["captions", "Subtitles"], ["tv", "Live TV"]];
 
-function MoreKeys({ ready, press }: { ready: boolean; press: (key: TvKey) => void }) {
+function MoreKeys({ ready, press, adb }: { ready: boolean; press: (key: TvKey) => void; adb: boolean }) {
   const plain = (key: TvKey, label: string, className?: string) => (
     <Key key={key} k={key} label={label} press={press} disabled={!ready} className={className}>
       <span>{label}</span>
@@ -279,8 +328,13 @@ function MoreKeys({ ready, press }: { ready: boolean; press: (key: TvKey) => voi
       <details>
         <summary>More keys</summary>
         <div className="tv-more-body">
-          <h3>Inputs</h3>
-          <div className="tv-row tv-row-4">{(["hdmi1", "hdmi2", "hdmi3", "hdmi4"] as TvKey[]).map((k, i) => plain(k, `HDMI ${i + 1}`))}</div>
+          {/* with ADB the Sources card does this properly; without it these keys are the only try, and many TVs ignore them */}
+          {!adb && (
+            <>
+              <h3>Source keys (not every TV takes them)</h3>
+              <div className="tv-row tv-row-4">{(["hdmi1", "hdmi2", "hdmi3", "hdmi4"] as TvKey[]).map((k, i) => plain(k, `HDMI ${i + 1}`))}</div>
+            </>
+          )}
           <h3>Numbers</h3>
           <div className="tv-numbers">{NUMBERS.map((k) => plain(k, k))}{plain("backspace", "Delete")}</div>
           <h3>Colour keys</h3>
