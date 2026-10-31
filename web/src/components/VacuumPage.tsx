@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AuthError, fetchVacuumMap, getVacuumCare, getVacuumHistory, getVacuumRooms, getVacuumSettings, cleanVacuumRooms, type VacuumRoom, refreshVacuumMap, resetVacuumPart, sendVacuumSwitch, type VacuumPartName, type VacuumSettings, type VacuumSwitch, type CleaningMode, type CleaningRecord, type SuctionLevel, type WaterLevel, type PartWear, type VacuumCare } from "../api";
+import { AuthError, fetchVacuumMap, getVacuumCare, getVacuumHistory, getVacuumRooms, getVacuumSchedule, type ScheduledTask, getVacuumSettings, cleanVacuumRooms, type VacuumRoom, refreshVacuumMap, resetVacuumPart, sendVacuumSwitch, type VacuumPartName, type VacuumSettings, type VacuumSwitch, type CleaningMode, type CleaningRecord, type SuctionLevel, type WaterLevel, type PartWear, type VacuumCare } from "../api";
 import { Shell } from "./Shell";
 import { useLivePosition } from "../useLivePosition";
 import { useVacuum } from "../useVacuum";
-import { CLEANING_MODE_LABEL, MODE_LABEL, SUCTION_LABEL, WATER_LABEL, mainAction } from "./vacuumText";
+import { CLEANING_MODE_LABEL, MODE_LABEL, SUCTION_LABEL, TASK_LABEL, WATER_LABEL, mainAction, repeatsText } from "./vacuumText";
 
 const RADIUS = 100;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
@@ -72,6 +72,7 @@ export function VacuumPage({ onLogout }: { onLogout: () => void }) {
             {state?.reachable && <Rooms busy={state.mode === "cleaning" || state.mode === "returning" || state.mode === "error"} onAuthError={onLogout} onError={fail} onNotice={say} onStarted={reload} />}
             {state?.reachable && <Care onAuthError={onLogout} onError={fail} />}
             {state?.reachable && <History onAuthError={onLogout} />}
+            {state?.reachable && <Schedule onAuthError={onLogout} />}
             {state?.reachable && <RobotSettings onAuthError={onLogout} onError={fail} />}
             {state?.reachable && <About state={state} />}
           </div>
@@ -95,6 +96,11 @@ function Hero({ state, busy, act }: { state: VacuumState; busy: boolean; act: Re
   const moving = mode === "cleaning" || mode === "returning";
   const attention = mode === "error" || battery < 20;
   const docked = mode === "charging" || mode === "charged" || mode === "emptying";
+  const stoppable = mode === "cleaning" || mode === "paused" || mode === "returning";
+  const [stopping, setStopping] = useState(false);
+  useEffect(() => {
+    if (!stoppable) setStopping(false); // it stopped by itself: nothing left to confirm
+  }, [stoppable]);
 
   return (
     <section className="vcard vhero" aria-label="Battery and state">
@@ -127,6 +133,8 @@ function Hero({ state, busy, act }: { state: VacuumState; busy: boolean; act: Re
         </div>
       </div>
 
+      {state.task && <p className="vhero-task">{TASK_LABEL[state.task]}</p>}
+
       {state.fault && (
         <div className="vfault" role="alert">
           <p className="vfault-title">{state.fault.title}</p>
@@ -143,10 +151,33 @@ function Hero({ state, busy, act }: { state: VacuumState; busy: boolean; act: Re
         </dl>
       )}
 
-      <div className="vpage-actions">
+      <div className={stoppable ? "vpage-actions vpage-actions-running" : "vpage-actions"}>
         <button type="button" className="primary" onClick={() => void act(main.action)} disabled={busy || mode === "error"}>
           {main.label}
         </button>
+        {stoppable && !stopping && (
+          <button type="button" className="vpage-stop" onClick={() => setStopping(true)} disabled={busy}>
+            Stop
+          </button>
+        )}
+        {stoppable && stopping && (
+          <div className="vpage-stop-ask" role="group" aria-label="Stop the cleaning">
+            <span>End this cleaning? Pause lets you go on later; stop doesn't.</span>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setStopping(false);
+                void act("stop");
+              }}
+            >
+              Yes, stop
+            </button>
+            <button type="button" onClick={() => setStopping(false)}>
+              Keep going
+            </button>
+          </div>
+        )}
         <button type="button" onClick={() => void act("dock")} disabled={busy || docked}>
           Go home
         </button>
@@ -261,6 +292,40 @@ function Rooms({ busy, onAuthError, onError, onNotice, onStarted }: { busy: bool
         {picked.length === 0 ? "Pick the rooms to clean" : `Clean ${picked.length === 1 ? "1 room" : `${picked.length} rooms`}`}
       </button>
       {busy && <p className="hint">The robot is busy: rooms can be picked when it is idle or on its dock.</p>}
+    </section>
+  );
+}
+
+/** The schedule kept on the robot. Absent when it has none (or doesn't answer): it is set in the Dreamehome app. */
+function Schedule({ onAuthError }: { onAuthError: () => void }) {
+  const [tasks, setTasks] = useState<ScheduledTask[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getVacuumSchedule()
+      .then((t) => alive && setTasks(t))
+      .catch((e) => {
+        if (e instanceof AuthError) onAuthError();
+      });
+    return () => {
+      alive = false;
+    };
+  }, [onAuthError]);
+  if (!tasks.length) return null;
+  return (
+    <section className="vcard" aria-labelledby="schedule-title">
+      <h2 id="schedule-title">Schedule</h2>
+      <ul className="history-list">
+        {tasks.map((t) => (
+          <li key={t.id} className={t.enabled ? undefined : "schedule-off"}>
+            <time>{t.time}</time>
+            <span>
+              {repeatsText(t.days, t.once)}
+              {t.enabled ? "" : ", off"}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="hint">Change the schedule in the Dreamehome app.</p>
     </section>
   );
 }

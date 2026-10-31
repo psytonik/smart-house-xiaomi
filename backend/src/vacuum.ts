@@ -1,7 +1,7 @@
 import { MiioDevice, MiioError } from "./miio.js";
 import { describeFault, type VacuumFault } from "./vacuumErrors.js";
 
-export type VacuumAction = "start" | "pause" | "dock" | "find" | "empty";
+export type VacuumAction = "start" | "pause" | "stop" | "dock" | "find" | "empty";
 export type VacuumMode = "cleaning" | "paused" | "idle" | "returning" | "charging" | "charged" | "emptying" | "updating" | "error" | "unknown";
 
 export type CleaningMode = "sweeping" | "mopping" | "both";
@@ -14,6 +14,8 @@ export interface VacuumState {
   mode: VacuumMode;
   /** The robot's own status number, kept for diagnosis. */
   statusCode: number;
+  /** What kind of cleaning is going on (or paused). Left out when nothing is. */
+  task?: "whole home" | "rooms" | "zone" | "spot" | "mapping";
   /** What is wrong, when the robot reports a fault. */
   fault?: VacuumFault;
   /** Area of the current or last cleaning, in m². Left out when the robot doesn't say. */
@@ -31,6 +33,8 @@ export interface VacuumState {
 const ACTIONS: Record<VacuumAction, { siid: number; aiid: number }> = {
   start: { siid: 2, aiid: 1 },
   pause: { siid: 2, aiid: 2 },
+  /** Ends the cleaning for good (pause can be resumed). */
+  stop: { siid: 4, aiid: 2 },
   dock: { siid: 3, aiid: 1 },
   /** Makes the robot say "I'm here", to find it under a sofa. */
   find: { siid: 7, aiid: 1 },
@@ -52,6 +56,25 @@ const MODES: Record<number, VacuumMode> = {
   22: "emptying", // the dock is sucking the bin empty
   28: "emptying", // on its way to the dock to be emptied
   34: "emptying",
+};
+
+/** MIoT 4/7, from the Tasshack/dreame-vacuum tables: the running or paused task. 0 is "none"; codes we are unsure of are left out. */
+const TASKS: Record<number, NonNullable<VacuumState["task"]>> = {
+  1: "whole home",
+  6: "whole home",
+  15: "whole home",
+  16: "whole home",
+  2: "zone",
+  7: "zone",
+  14: "zone",
+  18: "zone",
+  3: "rooms",
+  8: "rooms",
+  13: "rooms",
+  17: "rooms",
+  4: "spot",
+  9: "spot",
+  5: "mapping",
 };
 
 /** Checked against the Dreamehome app: 4/23 is the "Cleaning Mode" selector (only "both" = 2 has been seen on the robot so far). */
@@ -86,6 +109,21 @@ export const SETTING_NAMES = Object.keys(SWITCHES) as SettingName[];
 
 /** MIoT 4/28. */
 const CARPET_SENSITIVITY_VALUE = { low: 1, medium: 2, high: 3 } as const;
+
+export interface ScheduledTask {
+  id: number;
+  enabled: boolean;
+  /** "07:30" */
+  time: string;
+  /** Seven digits, 1 = repeats that day. */
+  days: string;
+  once: boolean;
+}
+
+export interface VacuumSchedule {
+  timezone?: string;
+  tasks: ScheduledTask[];
+}
 
 export interface VacuumSettings {
   resumeCleaning?: boolean;
@@ -181,6 +219,7 @@ export class Vacuum {
       { did: "x", siid: 3, piid: 1 }, // battery
       { did: "x", siid: 2, piid: 1 }, // status
       { did: "x", siid: 2, piid: 2 }, // fault code, 0 = none
+      { did: "x", siid: 4, piid: 7 }, // task: what kind of cleaning
       { did: "x", siid: 4, piid: 2 }, // cleaning time, minutes
       { did: "x", siid: 4, piid: 3 }, // cleaned area, m²
       { did: "x", siid: 4, piid: 23 }, // cleaning mode
@@ -198,6 +237,8 @@ export class Vacuum {
     const status = value(2, 1);
     if (battery === undefined || status === undefined) throw new MiioError("the vacuum did not report its state");
     const state: VacuumState = { battery: Math.max(0, Math.min(100, battery)), mode: MODES[status] ?? "unknown", statusCode: status };
+    const task = TASKS[value(4, 7) ?? 0];
+    if (task) state.task = task;
     const fault = describeFault(value(2, 2) ?? 0);
     if (fault) state.fault = fault;
     // The rest is nice to have: a robot that doesn't answer for it still shows its state.
@@ -254,6 +295,30 @@ export class Vacuum {
     const a = ACTIONS[action];
     const res = (await this.device.call("action", { did: "x", siid: a.siid, aiid: a.aiid, in: [] })) as { code?: number } | undefined;
     if (res?.code !== undefined && res.code !== 0) throw new MiioError(`the vacuum could not ${action} (code ${res.code})`);
+  }
+
+  /**
+   * The schedule kept on the robot (MIoT 8/2): tasks split by ";", fields by "-": id, status (1 and 2 on, 3 invalid, 0 off),
+   * time, repeat days as seven digits, "once" (0 means a one-off), map, suction, water, options. Read only: changing it is
+   * left to the Dreamehome app. Which digit is which weekday is not confirmed, so the days are passed on as they are.
+   */
+  async schedule(): Promise<VacuumSchedule> {
+    const rows = (await this.device.call("get_properties", [
+      { did: "x", siid: 8, piid: 1 },
+      { did: "x", siid: 8, piid: 2 },
+    ])) as Array<{ siid: number; piid: number; code?: number; value?: unknown }>;
+    const raw = (piid: number) => rows.find((r) => r.siid === 8 && r.piid === piid && r.code === 0)?.value;
+    const zone = raw(1);
+    const text = raw(2);
+    if (zone === undefined && text === undefined) throw new MiioError("the vacuum did not report its schedule");
+    const tasks: ScheduledTask[] = [];
+    for (const entry of typeof text === "string" ? text.split(";") : []) {
+      const f = entry.split("-");
+      if (f.length < 9 || !/^\d+$/.test(f[0]!) || !/^\d{1,2}:\d{2}$/.test(f[2]!)) continue;
+      tasks.push({ id: Number(f[0]), enabled: f[1] === "1" || f[1] === "2", time: f[2]!.padStart(5, "0"), days: f[3]!.padStart(7, "0"), once: f[4] === "0" });
+    }
+    tasks.sort((a, b) => a.time.localeCompare(b.time) || b.id - a.id);
+    return { ...(typeof zone === "string" && zone && { timezone: zone }), tasks };
   }
 
   /** Tells the robot a part was changed: its wear counter goes back to 100%. */

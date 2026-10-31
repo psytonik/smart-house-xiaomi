@@ -1821,3 +1821,31 @@ button:disabled {
   border-color: var(--line);
   color: var(--muted);
 }
+
+/* what kind of cleaning, stopping it, the schedule */
+.vhero-task {
+  margin-top: -12px;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+.vpage-actions-running .primary {
+  grid-column: auto;
+}
+.vpage-stop-ask {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.vpage-stop-ask span {
+  flex: 1 1 100%;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+.vpage-stop-ask button {
+  flex: 1;
+}
+.schedule-off {
+  color: var(--muted);
+}

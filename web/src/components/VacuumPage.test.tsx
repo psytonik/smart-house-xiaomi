@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api";
 import { FloorPlan, VacuumPage } from "./VacuumPage";
 
-vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getVacuum: vi.fn(), sendVacuum: vi.fn(), fetchVacuumMap: vi.fn(), refreshVacuumMap: vi.fn(), getVacuumLive: vi.fn(), sendCleaningMode: vi.fn(), getVacuumCare: vi.fn(), getVacuumHistory: vi.fn(), resetVacuumPart: vi.fn(), getVacuumSettings: vi.fn(), getVacuumRooms: vi.fn(), cleanVacuumRooms: vi.fn(), sendVacuumSwitch: vi.fn(), sendSuction: vi.fn(), sendWater: vi.fn() }));
+vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getVacuum: vi.fn(), sendVacuum: vi.fn(), fetchVacuumMap: vi.fn(), refreshVacuumMap: vi.fn(), getVacuumLive: vi.fn(), sendCleaningMode: vi.fn(), getVacuumCare: vi.fn(), getVacuumHistory: vi.fn(), resetVacuumPart: vi.fn(), getVacuumSettings: vi.fn(), getVacuumRooms: vi.fn(), getVacuumSchedule: vi.fn(), cleanVacuumRooms: vi.fn(), sendVacuumSwitch: vi.fn(), sendSuction: vi.fn(), sendWater: vi.fn() }));
 
 describe("VacuumPage", () => {
   beforeEach(() => {
@@ -15,6 +15,7 @@ describe("VacuumPage", () => {
     vi.mocked(api.getVacuumCare).mockRejectedValue(new Error("no care"));
     vi.mocked(api.getVacuumSettings).mockRejectedValue(new Error("no settings"));
     vi.mocked(api.getVacuumRooms).mockResolvedValue([]);
+    vi.mocked(api.getVacuumSchedule).mockResolvedValue([]);
     vi.mocked(api.cleanVacuumRooms).mockResolvedValue();
     vi.mocked(api.sendVacuumSwitch).mockResolvedValue();
     vi.mocked(api.getVacuumHistory).mockRejectedValue(new Error("no history"));
@@ -210,6 +211,44 @@ describe("VacuumPage", () => {
     render(<VacuumPage onLogout={() => {}} />);
     expect(((await screen.findByRole("checkbox", { name: /Kitchen/ })) as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText(/The robot is busy/)).toBeTruthy();
+  });
+
+  it("stops a cleaning for good, but only after asking, and says what kind of cleaning it is", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 70, mode: "cleaning", task: "rooms" });
+    render(<VacuumPage onLogout={() => {}} />);
+    expect(await screen.findByText("Chosen rooms")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(api.sendVacuum).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Keep going" }));
+    expect(api.sendVacuum).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, stop" }));
+    await waitFor(() => expect(api.sendVacuum).toHaveBeenCalledWith("stop"));
+
+    cleanup();
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 100, mode: "charged" });
+    render(<VacuumPage onLogout={() => {}} />);
+    await screen.findByText("Charged, at the dock");
+    expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  });
+
+  it("shows the schedule kept on the robot, and nothing when it has none", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    render(<VacuumPage onLogout={() => {}} />);
+    await screen.findByRole("button", { name: "Start cleaning" });
+    expect(screen.queryByText("Schedule")).toBeNull();
+
+    cleanup();
+    vi.mocked(api.getVacuumSchedule).mockResolvedValue([
+      { id: 1, enabled: true, time: "07:30", days: "1111111", once: false },
+      { id: 2, enabled: false, time: "21:00", days: "0111110", once: false },
+      { id: 3, enabled: true, time: "12:15", days: "0000000", once: true },
+    ]);
+    render(<VacuumPage onLogout={() => {}} />);
+    expect(await screen.findByText("Every day")).toBeTruthy();
+    expect(screen.getByText("5 days a week, off")).toBeTruthy();
+    expect(screen.getByText("Once")).toBeTruthy();
+    expect(screen.getByText("07:30")).toBeTruthy();
   });
 
   it("has no empty button for a robot without a dust station", async () => {

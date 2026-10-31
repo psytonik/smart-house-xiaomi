@@ -91,6 +91,16 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
     },
   );
 
+  app.get("/api/vacuum/schedule", async () => {
+    if (!vacuum) throw new HttpError(404, "vacuum is not configured (set VACUUM_IP and VACUUM_TOKEN)");
+    try {
+      return await vacuum.schedule();
+    } catch (e) {
+      if (e instanceof MiioError) throw new HttpError(502, e.message);
+      throw e;
+    }
+  });
+
   app.get("/api/vacuum/settings", async () => {
     if (!vacuum) throw new HttpError(404, "vacuum is not configured (set VACUUM_IP and VACUUM_TOKEN)");
     try {

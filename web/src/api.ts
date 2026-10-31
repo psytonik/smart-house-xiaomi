@@ -308,7 +308,7 @@ export async function resetStream(): Promise<{ otherViewers: number }> {
 }
 
 export type VacuumMode = "cleaning" | "paused" | "idle" | "returning" | "charging" | "charged" | "emptying" | "updating" | "error" | "unknown";
-export type VacuumAction = "start" | "pause" | "dock" | "find" | "empty";
+export type VacuumAction = "start" | "pause" | "stop" | "dock" | "find" | "empty";
 
 export type SuctionLevel = "quiet" | "standard" | "strong" | "turbo";
 export type WaterLevel = "low" | "medium" | "high";
@@ -318,6 +318,7 @@ export interface VacuumState {
   reachable?: boolean;
   battery?: number;
   mode?: VacuumMode;
+  task?: "whole home" | "rooms" | "zone" | "spot" | "mapping";
   fault?: { code: number; title: string; hint: string };
   model?: string;
   firmware?: string;
@@ -392,6 +393,22 @@ export async function cleanVacuumRooms(rooms: number[]): Promise<void> {
     body: JSON.stringify({ rooms }),
   });
   if (!res.ok) throw new Error(await errorText(res, "Couldn't start the cleaning"));
+}
+
+export interface ScheduledTask {
+  id: number;
+  enabled: boolean;
+  time: string;
+  /** Seven digits, 1 = repeats that day. */
+  days: string;
+  once: boolean;
+}
+
+/** The schedule kept on the robot. Read only: it is changed in the Dreamehome app. */
+export async function getVacuumSchedule(): Promise<ScheduledTask[]> {
+  const res = await api("/api/vacuum/schedule");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the schedule"));
+  return ((await res.json()) as { tasks: ScheduledTask[] }).tasks;
 }
 
 export type VacuumSwitch = "resumeCleaning" | "carpetBoost" | "obstacleAvoidance" | "childLock" | "dnd";

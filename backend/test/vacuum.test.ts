@@ -104,7 +104,8 @@ describe("vacuum API (mock device)", () => {
   let station = true;
   let fault = 0; // MIoT 2/2
   // what the robot keeps for its settings; the pretend one answers and changes these like the real one (booleans come as 1/0, "do not disturb" as true/false)
-  const store: Record<string, number | boolean | string> = { "4/11": 1, "4/12": 1, "4/21": 1, "4/26": 1, "4/27": 0, "4/28": 3, "5/1": true, "5/2": "22:00", "5/3": "08:00", "7/1": 100, "15/2": 2, "16/1": 58, "16/2": 17 };
+  const store: Record<string, number | boolean | string> = { "4/11": 1, "4/12": 1, "4/21": 1, "4/26": 1, "4/27": 0, "4/28": 3, "5/1": true, "5/2": "22:00", "5/3": "08:00", "7/1": 100, "15/2": 2, "16/1": 58, "16/2": 17, "8/2": "" };
+  let task = 0; // MIoT 4/7: what the robot is doing, 0 = nothing
   let settingsAnswered = true;
   let keepsOldSetting = false;
   let ready: boolean | 2 = true; // dock: the robot sits on it and it can empty the bin
@@ -120,7 +121,7 @@ describe("vacuum API (mock device)", () => {
   before(async () => {
     fake = await fakeVacuum((method, params) => {
       if (method === "get_properties") {
-        const values: Record<string, number | string> = { ...(mapName ? { "6/8": JSON.stringify({ object_name: mapName, md5: "x" }) } : {}), "3/1": 78, "2/1": status, "2/2": fault, ...(extras ? { "9/1": 241, "9/2": 80, "10/1": 141, "10/2": 70, "11/1": 61, "11/2": 91, "12/1": 1705943812, "12/2": 2789, "12/3": 158, "12/4": 1420 } : {}), ...(extras ? { "4/2": 4, "4/3": 5, "4/23": cleaning, "4/4": suction, "4/5": water } : {}), ...(settingsAnswered ? store : {}), ...(station ? { "15/1": 1, "15/3": ready === 2 ? 2 : ready ? 1 : 0, "15/5": dust } : {}) };
+        const values: Record<string, number | string> = { ...(mapName ? { "6/8": JSON.stringify({ object_name: mapName, md5: "x" }) } : {}), "3/1": 78, "2/1": status, "2/2": fault, "4/7": task, ...(extras ? { "9/1": 241, "9/2": 80, "10/1": 141, "10/2": 70, "11/1": 61, "11/2": 91, "12/1": 1705943812, "12/2": 2789, "12/3": 158, "12/4": 1420 } : {}), ...(extras ? { "4/2": 4, "4/3": 5, "4/23": cleaning, "4/4": suction, "4/5": water } : {}), ...(settingsAnswered ? store : {}), ...(station ? { "15/1": 1, "15/3": ready === 2 ? 2 : ready ? 1 : 0, "15/5": dust } : {}) };
         return { result: params.map((q: { siid: number; piid: number }) => (values[`${q.siid}/${q.piid}`] === undefined ? { ...q, code: -1 } : { ...q, code: 0, value: values[`${q.siid}/${q.piid}`] })) };
       }
       if (method === "miIO.info") return { result: { model: "dreame.vacuum.p2028a", fw_ver: "4.1.8_1156", mac: "AA:BB:CC:DD:EE:FF" } };
@@ -361,6 +362,35 @@ describe("vacuum API (mock device)", () => {
     // [room, times, suction (standard = 1), water (medium = 2), order]
     assert.deepEqual(JSON.parse(sent.in[1].value), { selects: [[3, 1, 1, 2, 1], [1, 1, 1, 2, 2]] });
     assert.equal(sent.in[1].piid, 10);
+  });
+
+  it("stops a cleaning for good, and says what kind of cleaning it is", async () => {
+    const before = actions.length;
+    assert.equal((await app.inject({ method: "POST", url: "/api/vacuum", headers: auth, payload: { action: "stop" } })).statusCode, 200);
+    assert.deepEqual([actions.at(-1).siid, actions.at(-1).aiid], [4, 2]);
+    assert.equal(actions.length, before + 1);
+    const kinds: Array<[number, string | undefined]> = [[0, undefined], [1, "whole home"], [2, "zone"], [3, "rooms"], [4, "spot"], [5, "mapping"], [8, "rooms"], [18, "zone"], [99, undefined]];
+    for (const [code, kind] of kinds) {
+      task = code;
+      assert.equal((await app.inject({ url: "/api/vacuum", headers: auth })).json().task, kind, `4/7 = ${code}`);
+    }
+    task = 0;
+  });
+
+  it("reads the schedule kept on the robot", async () => {
+    store["8/2"] = "";
+    assert.deepEqual((await app.inject({ url: "/api/vacuum/schedule", headers: auth })).json(), { tasks: [] });
+    // id-status-time-repeats-once-map-suction-water-options, tasks split by ";"; the fifth field is 0 for a one-off, status 1 and 2 are on, 3 is a task the robot calls invalid
+    store["8/2"] = "1-1-07:30-0111110-1-95-1-2-0;2-3-21:00-1000001-0-95-2-3-0;junk;3-0-12:15-0000000-0-95-1-2-0";
+    store["8/1"] = "Asia/Jerusalem";
+    const body = (await app.inject({ url: "/api/vacuum/schedule", headers: auth })).json();
+    assert.equal(body.timezone, "Asia/Jerusalem");
+    assert.deepEqual(body.tasks, [
+      { id: 1, enabled: true, time: "07:30", days: "0111110", once: false },
+      { id: 3, enabled: false, time: "12:15", days: "0000000", once: true },
+      { id: 2, enabled: false, time: "21:00", days: "1000001", once: true },
+    ]);
+    store["8/2"] = "";
   });
 
   it("refuses anything that is not a known action", async () => {
