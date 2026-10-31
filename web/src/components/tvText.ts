@@ -16,6 +16,8 @@ const NAMES: Record<string, string> = {
 export function appName(pkg: string): string {
   const known = NAMES[pkg];
   if (known) return known;
+  // the launcher of a TV is "the home screen", whoever made it (com.google.android.tvlauncher, a maker's tvhome ...)
+  if (/(^|\.)(tv)?(home|launcher)x?$/i.test(pkg)) return "Home";
   const parts = pkg.split(".").filter((p) => !["com", "org", "net", "android", "tv", "app", "apps", "google"].includes(p));
   const last = parts.at(-1) ?? pkg;
   return last.charAt(0).toUpperCase() + last.slice(1);

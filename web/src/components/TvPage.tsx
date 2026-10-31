@@ -226,7 +226,7 @@ function Remote({ ready, press }: { ready: boolean; press: (key: TvKey) => void 
       <div className="tv-row tv-row-5" role="group" aria-label="Playback">
         {k("previous", "Previous", <Icon d="M7 6v12M18 6l-8 6 8 6z" />)}
         {k("rewind", "Rewind", <Icon d="M12 7l-7 5 7 5zM20 7l-7 5 7 5z" />)}
-        {k("playPause", "Play or pause", <Icon d="M7 5l11 7-11 7zM4 5v14" />, { className: "tv-play" })}
+        {k("playPause", "Play or pause", <Icon d="M4 5l8 7-8 7zM16 5v14M20 5v14" />, { className: "tv-play" })}
         {k("fastForward", "Fast forward", <Icon d="M12 7l7 5-7 5zM4 7l7 5-7 5z" />)}
         {k("next", "Next", <Icon d="M17 6v12M6 6l8 6-8 6z" />)}
       </div>
