@@ -225,6 +225,9 @@ describe("quick commands (rules, no model)", () => {
     assert.deepEqual(one("вода средняя"), [["vacuum_water", "medium"]]);
     assert.deepEqual(one("мощность максимум"), [["vacuum_suction", "turbo"]]);
     assert.deepEqual(one("мощность тихо"), [["vacuum_suction", "quiet"]]);
+    assert.deepEqual(one("режим всасывания Turbo"), [["vacuum_suction", "turbo"]]);
+    assert.deepEqual(one("режим всасывания strong"), [["vacuum_suction", "strong"]]);
+    assert.deepEqual(one("вода High"), [["vacuum_water", "high"]]);
     assert.equal(planQuick(plain("сделай потише")) ?.[0]?.tool, "tv_key"); // volume, not suction
   });
 

@@ -52,9 +52,9 @@ function cleaningMode(t: string): "sweeping" | "mopping" | "both" | null {
 /** Water level in the phrase: «вода высоко», «больше воды», «средняя вода». Null when the phrase is not about water. */
 function waterLevel(t: string, bare = false): "low" | "medium" | "high" | null {
   if (!bare && !has(t, /(вод[аыуе]|влажност)/)) return null;
-  if (has(t, /(больше|побольше|много|высок|сильн|максимум|максимальн|полн)/)) return "high";
-  if (has(t, /(меньше|поменьше|мало|низк|слаб|минимум|минимальн)/)) return "low";
-  if (has(t, /(средн|нормальн|обычн)/)) return "medium";
+  if (has(t, /(больше|побольше|много|высок|сильн|максимум|максимальн|полн|high|max)/)) return "high";
+  if (has(t, /(меньше|поменьше|мало|низк|слаб|минимум|минимальн|low|min)/)) return "low";
+  if (has(t, /(средн|нормальн|обычн|medium|normal)/)) return "medium";
   return null;
 }
 
@@ -62,10 +62,10 @@ function waterLevel(t: string, bare = false): "low" | "medium" | "high" | null {
 function suctionLevel(t: string, needsPowerWord: boolean): "quiet" | "standard" | "strong" | "turbo" | null {
   const about = has(t, /(мощност|всасыван)/);
   if (needsPowerWord && !about) return null;
-  if (has(t, /(тих|тише|потише|quiet)/)) return "quiet";
-  if (has(t, /(турбо|максимальн|максимум|на полную)/)) return "turbo";
-  if (has(t, /(сильн|мощн|высок)/)) return "strong";
-  if (has(t, /(стандарт|обычн|средн|нормальн)/) && about) return "standard";
+  if (has(t, /(тих|тише|потише|quiet|silent|eco|эко)/)) return "quiet";
+  if (has(t, /(турбо|turbo|тур бо|максимальн|максимум|max|на полную)/)) return "turbo";
+  if (has(t, /(сильн|мощн|высок|strong|high)/)) return "strong";
+  if (has(t, /(стандарт|standard|обычн|средн|нормальн|medium|normal)/) && about) return "standard";
   return null;
 }
 
