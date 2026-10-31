@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { PTZ_OPERATIONS } from "./go2rtc.js";
 import type { AssistantMemory } from "./assistantMemory.js";
-import { planFollowUp, planQuick, type Step } from "./quick.js";
+import { ASK_VACUUM, planFollowUp, planQuick, type Step } from "./quick.js";
 import { APP_IDS, KEY_NAMES } from "./tv/messages.js";
 import { CLEANING_MODE_NAMES, SUCTION_NAMES, VACUUM_ACTIONS, WATER_NAMES } from "./vacuum.js";
 
@@ -280,6 +280,8 @@ export async function runAssistant(opts: { brain: Brain; model: string; call: Ap
   else {
     via = "model";
     result = await askModel(opts);
+    // About the vacuum, but nothing was done (no tool fit, or the model only talked): ask what is meant instead of "no tool for that".
+    if (result.actions.length === 0 && /(пылесос|уборк|робот)/.test(phrase)) result = { reply: ASK_VACUUM, actions: [] };
     const done = result.actions.filter((a) => DOES.has(a.tool));
     if (done.length > 0 && done.every((a) => a.ok)) {
       memory?.offer(phrase, done.map((a) => ({ tool: a.tool, input: a.input as Record<string, unknown>, say: result.reply.replace(/[.!]+$/u, "") })));

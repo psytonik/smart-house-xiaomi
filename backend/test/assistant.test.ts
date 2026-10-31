@@ -187,7 +187,7 @@ describe("assistant input and honesty", () => {
 });
 
 
-import { ASK_SUCTION, ASK_WATER, planQuick } from "../src/quick.js";
+import { ASK_MODE, ASK_SUCTION, ASK_VACUUM, ASK_WATER, planQuick } from "../src/quick.js";
 
 describe("quick commands (rules, no model)", () => {
   const plan = (t: string) => planQuick(plain(t))?.map((s) => [s.tool, s.input.action ?? s.input.direction ?? s.input.key ?? s.input.app ?? s.input.on]);
@@ -241,6 +241,25 @@ describe("quick commands (rules, no model)", () => {
     assert.deepEqual(calls, ['POST /api/vacuum/suction {"level":"turbo"}']);
     await runAssistant({ brain: never, model: "m", call, text: "много", history: [{ role: "assistant", content: ASK_WATER }] });
     assert.equal(calls.at(-1), 'POST /api/vacuum/water {"level":"high"}');
+  });
+
+  it("understands the cleaning mode as people say it, and asks when no mode is named", async () => {
+    const one = (t: string) => planQuick(plain(t))?.map((x) => [x.tool, x.input.mode ?? x.say]);
+    assert.deepEqual(one("пылесос режим уборки двойной"), [["vacuum_mode", "both"]]);
+    assert.deepEqual(one("режим уборки мытьё"), [["vacuum_mode", "mopping"]]);
+    assert.deepEqual(one("пылесос режим мытья"), [["vacuum_mode", "mopping"]]);
+    assert.deepEqual(one("пылесос режим уборки"), [["ask", ASK_MODE]]);
+    const calls: string[] = [];
+    const call: ApiCall = async (m, u, b) => (calls.push(`${m} ${u} ${JSON.stringify(b)}`), { status: 200, body: {} });
+    const never: Brain = { messages: { create: async () => assert.fail("no model") } };
+    await runAssistant({ brain: never, model: "m", call, text: "Двойной.", history: [{ role: "assistant", content: ASK_MODE }] });
+    assert.deepEqual(calls, ['POST /api/vacuum/mode {"mode":"both"}']);
+  });
+
+  it("asks what is meant when the model does nothing about the vacuum", async () => {
+    const { brain } = scripted(message("end_turn", [{ type: "text", text: "Нет инструмента для этой просьбы." }]), message("end_turn", [{ type: "text", text: "Нет инструмента для этой просьбы." }]));
+    const out = await runAssistant({ brain, model: "m", call: async () => ({ status: 200, body: {} }), text: "пылесос фигня какая-то" });
+    assert.equal(out.reply, ASK_VACUUM);
   });
 
   it("splits several commands in one phrase", () => {

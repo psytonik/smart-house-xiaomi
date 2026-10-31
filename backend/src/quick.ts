@@ -16,6 +16,9 @@ const has = (text: string, re: RegExp) => re.test(text);
 /** Questions asked when the phrase names the setting but not the value; the next phrase may be just the answer. */
 export const ASK_SUCTION = "Какую мощность всасывания: тихо, стандарт, сильно или турбо?";
 export const ASK_WATER = "Сколько воды: мало, средне или много?";
+export const ASK_MODE = "Какой режим уборки: сухая, мытьё или двойная?";
+/** Asked when the phrase is about a vacuum and nothing could be done with it. */
+export const ASK_VACUUM = "Что сделать с пылесосом: запустить, домой, найти, режим уборки, мощность или вода?";
 
 const COLORS: Array<[RegExp, string, Record<string, unknown>]> = [
   [/красн/, "красным", { hue: 0 }],
@@ -37,6 +40,14 @@ const WORDS = {
   tv: /(телевизор|телик|\bтв\b)/,
   camera: /(камер)/,
 };
+
+/** Cleaning mode in the phrase: сухая, мокрая / мытьё, двойная. Null when it names none. */
+function cleaningMode(t: string): "sweeping" | "mopping" | "both" | null {
+  if (has(t, /(двойн|сух\S*\s+и\s+(мокр|влажн)|(мокр|влажн)\S*\s+и\s+сух|и то и другое|\bобе\b|\bоба\b|вместе|смешан)/)) return "both";
+  if (has(t, /(мокр|протир|швабр|влажн|мытье|мытьё|мытья|мытьем|мыть|мойк|моющ)/)) return "mopping";
+  if (has(t, /(сух|только пылесос|только подмет|без воды|подметани|пылесошен)/)) return "sweeping";
+  return null;
+}
 
 /** Water level in the phrase: «вода высоко», «больше воды», «средняя вода». Null when the phrase is not about water. */
 function waterLevel(t: string, bare = false): "low" | "medium" | "high" | null {
@@ -99,8 +110,8 @@ function planOne(part: string): Step[] | null {
     if (has(t, /(останов|прекрати|стоп|хватит|заверши|отмени)/)) return [{ tool: "vacuum_action", input: { action: "stop" }, say: "Уборка остановлена" }];
     // What kind of cleaning, how hard, how wet. "Мокрая уборка" sets the mode; with "запусти" it also starts.
     const start = has(t, /(запусти|начни|начать|поехали|поезжай)/);
-    const mode = has(t, /(сух\S* и (мокр|влажн)|(мокр|влажн)\S* и сух|и то и другое|обе|оба|вместе|смешан)/) ? "both" : has(t, /(мокр|протир|швабр|влажн)/) ? "mopping" : has(t, /(сух|только пылесос|только подмет|без воды|подметани)/) ? "sweeping" : null;
-    const modeWords = { both: "сухую и мокрую уборку", mopping: "мокрую уборку", sweeping: "сухую уборку" } as const;
+    const mode = cleaningMode(t);
+    const modeWords = { both: "двойную уборку", mopping: "мытьё", sweeping: "сухую уборку" } as const;
     if (mode) {
       const steps: Step[] = [{ tool: "vacuum_mode", input: { mode }, say: `Включил ${modeWords[mode]}` }];
       if (start) steps.push({ tool: "vacuum_clean", input: { text: t }, say: "Пылесос начал уборку" });
@@ -111,6 +122,7 @@ function planOne(part: string): Step[] | null {
     const water = waterLevel(t);
     if (water) return [{ tool: "vacuum_water", input: { level: water }, say: "Поменял количество воды" }];
     if (has(t, /(мощност|всасыван)/)) return [{ tool: "ask", input: {}, say: ASK_SUCTION }];
+    if (has(t, /режим\S*\s+(уборк|мытья|мытье|мытьё|работы)|тип уборки|вид уборки/)) return [{ tool: "ask", input: {}, say: ASK_MODE }];
     if (has(t, /(уровень|количество|подач)\S* воды|вода|воды/)) return [{ tool: "ask", input: {}, say: ASK_WATER }];
     if (has(t, /(запусти|включи|начни|начать|поехали|убери|пропылесось|пылесось|поезжай|продолжи|подмети|помой)/)) return [{ tool: "vacuum_clean", input: { text: t }, say: "Пылесос начал уборку" }];
     return null;
@@ -184,6 +196,10 @@ export function planFollowUp(phrase: string, lastAssistant: string | undefined):
   if (lastAssistant === ASK_SUCTION) {
     const level = suctionLevel(phrase, false);
     return level ? [{ tool: "vacuum_suction", input: { level }, say: "Поменял мощность пылесоса" }] : null;
+  }
+  if (lastAssistant === ASK_MODE) {
+    const mode = cleaningMode(phrase);
+    return mode ? [{ tool: "vacuum_mode", input: { mode }, say: { both: "Включил двойную уборку", mopping: "Включил мытьё", sweeping: "Включил сухую уборку" }[mode] }] : null;
   }
   if (lastAssistant === ASK_WATER) {
     const level = waterLevel(phrase, true);
