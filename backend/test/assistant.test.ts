@@ -187,7 +187,7 @@ describe("assistant input and honesty", () => {
 });
 
 
-import { planQuick } from "../src/quick.js";
+import { ASK_SUCTION, ASK_WATER, planQuick } from "../src/quick.js";
 
 describe("quick commands (rules, no model)", () => {
   const plan = (t: string) => planQuick(plain(t))?.map((s) => [s.tool, s.input.action ?? s.input.direction ?? s.input.key ?? s.input.app ?? s.input.on]);
@@ -226,6 +226,21 @@ describe("quick commands (rules, no model)", () => {
     assert.deepEqual(one("мощность максимум"), [["vacuum_suction", "turbo"]]);
     assert.deepEqual(one("мощность тихо"), [["vacuum_suction", "quiet"]]);
     assert.equal(planQuick(plain("сделай потише")) ?.[0]?.tool, "tv_key"); // volume, not suction
+  });
+
+  it("asks for the value when only the setting is named, and takes the next phrase as the answer", async () => {
+    assert.equal(planQuick(plain("у пылесоса режим всасывания"))?.[0]?.say, ASK_SUCTION);
+    assert.equal(planQuick(plain("уровень воды"))?.[0]?.say, ASK_WATER);
+    const calls: string[] = [];
+    const call: ApiCall = async (m, u, b) => (calls.push(`${m} ${u} ${JSON.stringify(b)}`), { status: 200, body: {} });
+    const never: Brain = { messages: { create: async () => assert.fail("no model") } };
+    const asked = await runAssistant({ brain: never, model: "m", call, text: "у пылесоса режим всасывания" });
+    assert.equal(asked.reply, ASK_SUCTION);
+    assert.deepEqual(calls, []);
+    await runAssistant({ brain: never, model: "m", call, text: "Турбо.", history: [{ role: "user", content: "x" }, { role: "assistant", content: ASK_SUCTION }] });
+    assert.deepEqual(calls, ['POST /api/vacuum/suction {"level":"turbo"}']);
+    await runAssistant({ brain: never, model: "m", call, text: "много", history: [{ role: "assistant", content: ASK_WATER }] });
+    assert.equal(calls.at(-1), 'POST /api/vacuum/water {"level":"high"}');
   });
 
   it("splits several commands in one phrase", () => {

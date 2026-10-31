@@ -13,6 +13,10 @@ export interface Step {
 
 const has = (text: string, re: RegExp) => re.test(text);
 
+/** Questions asked when the phrase names the setting but not the value; the next phrase may be just the answer. */
+export const ASK_SUCTION = "Какую мощность всасывания: тихо, стандарт, сильно или турбо?";
+export const ASK_WATER = "Сколько воды: мало, средне или много?";
+
 const COLORS: Array<[RegExp, string, Record<string, unknown>]> = [
   [/красн/, "красным", { hue: 0 }],
   [/оранж/, "оранжевым", { hue: 30 }],
@@ -35,8 +39,8 @@ const WORDS = {
 };
 
 /** Water level in the phrase: «вода высоко», «больше воды», «средняя вода». Null when the phrase is not about water. */
-function waterLevel(t: string): "low" | "medium" | "high" | null {
-  if (!has(t, /(вод[аыуе]|влажност)/)) return null;
+function waterLevel(t: string, bare = false): "low" | "medium" | "high" | null {
+  if (!bare && !has(t, /(вод[аыуе]|влажност)/)) return null;
   if (has(t, /(больше|побольше|много|высок|сильн|максимум|максимальн|полн)/)) return "high";
   if (has(t, /(меньше|поменьше|мало|низк|слаб|минимум|минимальн)/)) return "low";
   if (has(t, /(средн|нормальн|обычн)/)) return "medium";
@@ -82,6 +86,8 @@ function planOne(part: string): Step[] | null {
     if (water) return [{ tool: "vacuum_water", input: { level: water }, say: "Поменял количество воды" }];
     const suction = suctionLevel(t, true);
     if (suction) return [{ tool: "vacuum_suction", input: { level: suction }, say: "Поменял мощность пылесоса" }];
+    if (has(t, /(мощност|всасыван)/)) return [{ tool: "ask", input: {}, say: ASK_SUCTION }];
+    if (has(t, /(уровень|количество|подач)\S* воды/)) return [{ tool: "ask", input: {}, say: ASK_WATER }];
   }
 
   // --- vacuum ---
@@ -104,6 +110,8 @@ function planOne(part: string): Step[] | null {
     if (suction && !start) return [{ tool: "vacuum_suction", input: { level: suction }, say: "Поменял мощность пылесоса" }];
     const water = waterLevel(t);
     if (water) return [{ tool: "vacuum_water", input: { level: water }, say: "Поменял количество воды" }];
+    if (has(t, /(мощност|всасыван)/)) return [{ tool: "ask", input: {}, say: ASK_SUCTION }];
+    if (has(t, /(уровень|количество|подач)\S* воды|вода|воды/)) return [{ tool: "ask", input: {}, say: ASK_WATER }];
     if (has(t, /(запусти|включи|начни|начать|поехали|убери|пропылесось|пылесось|поезжай|продолжи|подмети|помой)/)) return [{ tool: "vacuum_clean", input: { text: t }, say: "Пылесос начал уборку" }];
     return null;
   }
@@ -169,4 +177,17 @@ export function planQuick(text: string): Step[] | null {
     steps.push(...one);
   }
   return steps;
+}
+
+/** The answer to a question the assistant just asked ("турбо" after «какую мощность»). Null when the last thing said was not one. */
+export function planFollowUp(phrase: string, lastAssistant: string | undefined): Step[] | null {
+  if (lastAssistant === ASK_SUCTION) {
+    const level = suctionLevel(phrase, false);
+    return level ? [{ tool: "vacuum_suction", input: { level }, say: "Поменял мощность пылесоса" }] : null;
+  }
+  if (lastAssistant === ASK_WATER) {
+    const level = waterLevel(phrase, true);
+    return level ? [{ tool: "vacuum_water", input: { level }, say: "Поменял количество воды" }] : null;
+  }
+  return null;
 }

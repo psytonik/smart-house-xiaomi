@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { PTZ_OPERATIONS } from "./go2rtc.js";
 import type { AssistantMemory } from "./assistantMemory.js";
-import { planQuick, type Step } from "./quick.js";
+import { planFollowUp, planQuick, type Step } from "./quick.js";
 import { APP_IDS, KEY_NAMES } from "./tv/messages.js";
 import { CLEANING_MODE_NAMES, SUCTION_NAMES, VACUUM_ACTIONS, WATER_NAMES } from "./vacuum.js";
 
@@ -230,6 +230,8 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
   const actions: AssistantReply["actions"] = [];
   const said: string[] = [];
   for (const step of steps) {
+    // A question back to the person: nothing is done, and the next phrase is the answer.
+    if (step.tool === "ask") return { reply: step.say, actions };
     let tool = step.tool;
     let input = step.input;
     let say = step.say;
@@ -270,7 +272,8 @@ export async function runAssistant(opts: { brain: Brain; model: string; call: Ap
   const { memory } = opts;
   // What the household taught it, then the everyday rules: instant, free, and never "say it and not do it". The model is for the rest.
   const taught = memory?.find(phrase);
-  const steps = taught ?? planQuick(phrase);
+  const lastSaid = [...(opts.history ?? [])].reverse().find((t) => t.role === "assistant")?.content;
+  const steps = taught ?? planFollowUp(phrase, lastSaid) ?? planQuick(phrase);
   let via: "rules" | "learned" | "model" = taught ? "learned" : "rules";
   let result: AssistantReply;
   if (steps) result = await runSteps(steps, opts.call);
