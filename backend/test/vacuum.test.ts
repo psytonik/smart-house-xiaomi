@@ -100,6 +100,14 @@ describe("vacuum API (mock device)", () => {
   let cleaning = 2;
   let suction = 1;
   let water = 2;
+  let dust = 0; // dock: 1 while it empties the bin
+  let station = true;
+  let fault = 0; // MIoT 2/2
+  // what the robot keeps for its settings; the pretend one answers and changes these like the real one (booleans come as 1/0, "do not disturb" as true/false)
+  const store: Record<string, number | boolean | string> = { "4/11": 1, "4/12": 1, "4/21": 1, "4/26": 1, "4/27": 0, "4/28": 3, "5/1": true, "5/2": "22:00", "5/3": "08:00", "7/1": 100, "15/2": 2, "16/1": 58, "16/2": 17 };
+  let settingsAnswered = true;
+  let keepsOldSetting = false;
+  let ready: boolean | 2 = true; // dock: the robot sits on it and it can empty the bin
   let keepsOldLevels = false; // like a robot with Customized Cleaning on: says yes, keeps its value
   let mapName: string | undefined = "1/2/9";
   let cloud: Awaited<ReturnType<typeof startFakeCloud>>;
@@ -112,14 +120,17 @@ describe("vacuum API (mock device)", () => {
   before(async () => {
     fake = await fakeVacuum((method, params) => {
       if (method === "get_properties") {
-        const values: Record<string, number | string> = { ...(mapName ? { "6/8": JSON.stringify({ object_name: mapName, md5: "x" }) } : {}), "3/1": 78, "2/1": status, ...(extras ? { "9/1": 241, "9/2": 80, "10/1": 141, "10/2": 70, "11/1": 61, "11/2": 91, "12/1": 1705943812, "12/2": 2789, "12/3": 158, "12/4": 1420 } : {}), ...(extras ? { "4/2": 4, "4/3": 5, "4/23": cleaning, "4/4": suction, "4/5": water } : {}) };
+        const values: Record<string, number | string> = { ...(mapName ? { "6/8": JSON.stringify({ object_name: mapName, md5: "x" }) } : {}), "3/1": 78, "2/1": status, "2/2": fault, ...(extras ? { "9/1": 241, "9/2": 80, "10/1": 141, "10/2": 70, "11/1": 61, "11/2": 91, "12/1": 1705943812, "12/2": 2789, "12/3": 158, "12/4": 1420 } : {}), ...(extras ? { "4/2": 4, "4/3": 5, "4/23": cleaning, "4/4": suction, "4/5": water } : {}), ...(settingsAnswered ? store : {}), ...(station ? { "15/1": 1, "15/3": ready === 2 ? 2 : ready ? 1 : 0, "15/5": dust } : {}) };
         return { result: params.map((q: { siid: number; piid: number }) => (values[`${q.siid}/${q.piid}`] === undefined ? { ...q, code: -1 } : { ...q, code: 0, value: values[`${q.siid}/${q.piid}`] })) };
       }
       if (method === "miIO.info") return { result: { model: "dreame.vacuum.p2028a", fw_ver: "4.1.8_1156", mac: "AA:BB:CC:DD:EE:FF" } };
       if (method === "set_properties") {
         sets.push(params);
         if (fail) return { result: params.map((q: object) => ({ ...q, code: -1 })) };
-        if (params[0].piid === 23) cleaning = params[0].value;
+        const k = `${params[0].siid}/${params[0].piid}`;
+        if (k in store) {
+          if (!keepsOldSetting) store[k] = params[0].value;
+        } else if (params[0].piid === 23) cleaning = params[0].value;
         else if (!keepsOldLevels && params[0].piid === 4) suction = params[0].value;
         else if (!keepsOldLevels && params[0].piid === 5) water = params[0].value;
         return { result: params.map((q: object) => ({ ...q, code: 0 })) };
@@ -160,6 +171,7 @@ describe("vacuum API (mock device)", () => {
       mainBrush: { percent: 80, hoursLeft: 241 },
       sideBrush: { percent: 70, hoursLeft: 141 },
       filter: { percent: 61, hoursLeft: 91 },
+      sensor: { percent: 58, hoursLeft: 17 },
       totals: { firstCleanAt: "2024-01-22T17:16:52.000Z", minutes: 2789, cleanings: 158, areaM2: 1420 },
     });
     assert.equal((await app.inject({ url: "/api/vacuum/care" })).statusCode, 401);
@@ -194,7 +206,7 @@ describe("vacuum API (mock device)", () => {
 
   it("reports battery and a readable state", async () => {
     const res = await app.inject({ url: "/api/vacuum", headers: auth });
-    assert.deepEqual(res.json(), { configured: true, reachable: true, battery: 78, mode: "charging", statusCode: 6, areaM2: 5, minutes: 4, cleaningMode: "both", suction: "standard", water: "medium", model: "dreame.vacuum.p2028a", firmware: "4.1.8_1156" });
+    assert.deepEqual(res.json(), { configured: true, reachable: true, battery: 78, mode: "charging", statusCode: 6, areaM2: 5, minutes: 4, cleaningMode: "both", suction: "standard", water: "medium", dustStation: { autoEmpty: true, ready: true, emptying: false, limited: false }, model: "dreame.vacuum.p2028a", firmware: "4.1.8_1156" });
     status = 13;
     assert.equal((await app.inject({ url: "/api/vacuum", headers: auth })).json().mode, "charged");
     status = 99;
@@ -217,6 +229,111 @@ describe("vacuum API (mock device)", () => {
       assert.equal(res.statusCode, 200, action);
     }
     assert.deepEqual(actions.map((a) => [a.siid, a.aiid]), [[2, 1], [2, 2], [3, 1], [7, 1]]);
+  });
+
+  it("empties the bin only when the robot is on a dock that can do it", async () => {
+    const empty = () => app.inject({ method: "POST", url: "/api/vacuum", headers: auth, payload: { action: "empty" } });
+    const before = actions.length;
+    ready = false; // away from the dock
+    assert.equal((await empty()).statusCode, 409);
+    ready = true;
+    dust = 1; // already emptying
+    assert.equal((await empty()).statusCode, 409);
+    dust = 0;
+    station = false; // a robot that reports no dock
+    assert.equal((await empty()).statusCode, 409);
+    station = true;
+    assert.equal(actions.length, before, "nothing was sent to the robot");
+    assert.equal((await empty()).statusCode, 200);
+    assert.deepEqual([actions.at(-1).siid, actions.at(-1).aiid], [15, 1]);
+    dust = 1;
+    assert.equal((await app.inject({ url: "/api/vacuum", headers: auth })).json().dustStation.emptying, true);
+    dust = 0;
+  });
+
+  it("explains a fault and knows the dock's own states", async () => {
+    status = 4;
+    fault = 12;
+    let body = (await app.inject({ url: "/api/vacuum", headers: auth })).json();
+    assert.equal(body.mode, "error");
+    assert.deepEqual(body.fault, { code: 12, title: "Main brush is tangled", hint: "Take the main brush out and clear its bristles and bearings." });
+    fault = 9999; // a code we have no text for is still reported
+    body = (await app.inject({ url: "/api/vacuum", headers: auth })).json();
+    assert.equal(body.fault.title, "Error 9999");
+    fault = 0;
+    status = 22;
+    body = (await app.inject({ url: "/api/vacuum", headers: auth })).json();
+    assert.equal(body.mode, "emptying");
+    assert.ok(!("fault" in body));
+    status = 14;
+    assert.equal((await app.inject({ url: "/api/vacuum", headers: auth })).json().mode, "updating");
+    status = 6;
+    ready = 2;
+    body = (await app.inject({ url: "/api/vacuum", headers: auth })).json();
+    ready = true;
+    assert.deepEqual(body.dustStation, { autoEmpty: true, ready: false, emptying: false, limited: true });
+  });
+
+  it("resets a part's wear counter after it was changed", async () => {
+    const before = actions.length;
+    for (const part of ["mainBrush", "sideBrush", "filter"]) {
+      const res = await app.inject({ method: "POST", url: "/api/vacuum/reset", headers: auth, payload: { part } });
+      assert.equal(res.statusCode, 200, part);
+    }
+    assert.deepEqual(actions.slice(before).map((a) => [a.siid, a.aiid]), [[9, 1], [10, 1], [11, 1]]);
+    for (const payload of [{}, { part: "mop" }]) {
+      assert.equal((await app.inject({ method: "POST", url: "/api/vacuum/reset", headers: auth, payload })).statusCode, 400, JSON.stringify(payload));
+    }
+    assert.equal(actions.length, before + 3, "nothing else was sent");
+  });
+
+  it("reports the robot's settings", async () => {
+    const res = await app.inject({ url: "/api/vacuum/settings", headers: auth });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), {
+      resumeCleaning: true,
+      carpetBoost: true,
+      obstacleAvoidance: true,
+      childLock: false,
+      customizedCleaning: true,
+      carpetSensitivity: "high",
+      dnd: { enabled: true, from: "22:00", to: "08:00" },
+      volume: 100,
+      autoEmptyFrequency: 2,
+    });
+    settingsAnswered = false;
+    const none = await app.inject({ url: "/api/vacuum/settings", headers: auth });
+    settingsAnswered = true;
+    assert.equal(none.statusCode, 502, "a robot that answers for none of them is an error, not an empty page");
+  });
+
+  it("switches a setting and reads it back", async () => {
+    const set = (name: string, on: boolean) => app.inject({ method: "POST", url: "/api/vacuum/setting", headers: auth, payload: { name, on } });
+    assert.equal((await set("childLock", true)).statusCode, 200);
+    assert.deepEqual(sets.at(-1), [{ did: "x", siid: 4, piid: 27, value: 1 }]);
+    assert.equal((await app.inject({ url: "/api/vacuum/settings", headers: auth })).json().childLock, true);
+    assert.equal((await set("dnd", false)).statusCode, 200);
+    assert.deepEqual(sets.at(-1), [{ did: "x", siid: 5, piid: 1, value: false }], "do not disturb is a real boolean, the others are 1 and 0");
+    assert.equal((await app.inject({ url: "/api/vacuum/settings", headers: auth })).json().dnd.enabled, false);
+    await set("childLock", false);
+    await set("dnd", true);
+    keepsOldSetting = true;
+    const refused = await set("carpetBoost", false);
+    keepsOldSetting = false;
+    assert.equal(refused.statusCode, 502, "the robot said yes and kept its value");
+    assert.match(refused.json().error, /kept its old setting/);
+    for (const payload of [{}, { name: "volume", on: true }, { name: "childLock" }, { name: "childLock", on: "yes" }]) {
+      assert.equal((await app.inject({ method: "POST", url: "/api/vacuum/setting", headers: auth, payload })).statusCode, 400, JSON.stringify(payload));
+    }
+  });
+
+  it("reports how dirty the sensors are, and resets that after cleaning them", async () => {
+    const care = (await app.inject({ url: "/api/vacuum/care", headers: auth })).json();
+    assert.deepEqual(care.sensor, { percent: 58, hoursLeft: 17 });
+    const before = actions.length;
+    assert.equal((await app.inject({ method: "POST", url: "/api/vacuum/reset", headers: auth, payload: { part: "sensor" } })).statusCode, 200);
+    assert.deepEqual([actions.at(-1).siid, actions.at(-1).aiid], [16, 1]);
+    assert.equal(actions.length, before + 1);
   });
 
   it("refuses anything that is not a known action", async () => {

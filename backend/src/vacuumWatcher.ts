@@ -7,7 +7,7 @@ export interface Notifier {
   notify(title: string, body: string, type: string): Promise<unknown>;
 }
 
-const DOCKED = new Set<VacuumMode>(["charging", "charged"]);
+const DOCKED = new Set<VacuumMode>(["charging", "charged", "emptying"]);
 /** A part is "worn" below this many percent. */
 const WORN_PERCENT = 20;
 /** A robot that stops away from the dock with this much battery or less is stranded. */
@@ -113,7 +113,7 @@ export class VacuumWatcher {
 
     if (mode === "error" && !this.errored) {
       this.errored = true;
-      await this.push.notify("Vacuum needs help", "It stopped with an error. Check the robot: it may be stuck or its bin full.", "vacuum-error");
+      await this.push.notify("Vacuum needs help", state.fault ? `${state.fault.title}. ${state.fault.hint}` : "It stopped with an error. Check the robot: it may be stuck or its bin full.", "vacuum-error");
     } else if (mode !== "error") {
       this.errored = false;
     }

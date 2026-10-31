@@ -7,6 +7,8 @@ export const MODE_LABEL: Record<VacuumMode, string> = {
   returning: "Going home",
   charging: "Charging",
   charged: "Charged, at the dock",
+  emptying: "Emptying the bin",
+  updating: "Updating its software",
   error: "Needs attention, check the robot",
   unknown: "Status unknown",
 };

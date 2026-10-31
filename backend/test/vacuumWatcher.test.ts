@@ -104,6 +104,24 @@ describe("VacuumWatcher", () => {
     assert.deepEqual(sent.map((m) => m.type), ["vacuum-error", "vacuum-error"]);
   });
 
+  it("says what is wrong when the robot says it", async () => {
+    const w = watcher();
+    await w.tick();
+    state = at("error", { fault: { code: 12, title: "Main brush is tangled", hint: "Clear its bristles." } });
+    await w.tick();
+    assert.equal(sent[0]!.body, "Main brush is tangled. Clear its bristles.");
+  });
+
+  it("does not take emptying on the dock for being stranded or a new cleaning", async () => {
+    const w = watcher();
+    await w.tick();
+    state = at("cleaning");
+    await w.tick();
+    state = at("emptying", { battery: 5, areaM2: 9, minutes: 20 });
+    await w.tick();
+    assert.deepEqual(sent.map((m) => m.type), ["vacuum-done"]);
+  });
+
   it("tells when the robot stopped away from the dock with a nearly empty battery, once", async () => {
     const w = watcher();
     await w.tick();

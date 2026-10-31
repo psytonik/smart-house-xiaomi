@@ -1130,13 +1130,77 @@ button:disabled {
 
 /* ---------- vacuum page ---------- */
 .vpage-main {
-  width: min(100%, 520px);
+  width: min(100%, 1040px);
   margin: 0 auto;
-  padding: 32px 16px 48px;
+  padding: 24px 16px 48px;
+  display: grid;
+  gap: 20px;
+}
+.vpage-main > .page-title {
+  justify-self: start;
+}
+/* two columns on a wide screen: the robot and its controls, then the plan and the upkeep */
+.vgrid {
+  display: grid;
+  gap: 16px;
+  align-items: start;
+}
+.vcol {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+@media (min-width: 900px) {
+  .vgrid {
+    grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+    gap: 20px;
+  }
+  .vgrid > .vcol:first-child {
+    position: sticky;
+    top: 72px;
+  }
+}
+.vcard {
+  background: var(--slate);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+}
+.vcard > h2,
+.vcard > summary {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.vabout {
+  display: block;
+}
+.vabout summary {
+  cursor: pointer;
+  min-height: 24px;
+}
+.vabout[open] summary {
+  margin-bottom: 8px;
+}
+.vhero {
+  justify-items: center;
+  gap: 20px;
+}
+.vhero-last {
+  margin: 0;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 32px;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  color: var(--muted);
+}
+.vhero-last dd {
+  margin: 0;
+  color: var(--text);
 }
 .vpage-offline {
   display: grid;
@@ -1147,7 +1211,7 @@ button:disabled {
 /* the round "robot from above" */
 .dial {
   position: relative;
-  width: min(80vw, 300px);
+  width: min(64vw, 240px);
   aspect-ratio: 1;
 }
 .dial-ring {
@@ -1165,7 +1229,7 @@ button:disabled {
   padding: 0 18%;
 }
 .dial-value {
-  font-size: clamp(3.5rem, 18vw, 5rem);
+  font-size: clamp(3rem, 15vw, 4rem);
   font-weight: 650;
   letter-spacing: -0.04em;
   line-height: 1;
@@ -1176,6 +1240,9 @@ button:disabled {
   color: var(--muted);
   margin-left: 2px;
   letter-spacing: 0;
+}
+.dial-attention {
+  color: var(--signal) !important;
 }
 .dial-state {
   color: var(--muted);
@@ -1333,32 +1400,40 @@ button:disabled {
   border: 0;
 }
 
+/* a segmented control: one track, the chosen segment lifted out of it */
 .vpage-modes {
   width: 100%;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
+  gap: 4px;
+  padding: 4px;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
 }
 .vpage-modes button {
-  min-height: 48px;
-  padding: 8px 6px;
+  min-height: 44px;
+  padding: 6px 4px;
   line-height: 1.2;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+.vpage-modes button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: transparent;
 }
 .vpage-modes button[aria-checked="true"] {
+  background: var(--slate-2);
   border-color: var(--focus);
-  background: var(--slate);
-  color: var(--focus);
+  color: var(--text);
   font-weight: 600;
 }
 
 .vpage-care {
   width: 100%;
-  display: grid;
-  gap: 16px;
-}
-.vpage-care h2 {
-  margin: 0;
-  font-size: 1.1rem;
 }
 .care-list {
   list-style: none;
@@ -1401,8 +1476,23 @@ button:disabled {
   color: var(--muted);
 }
 
-.vpage-actions .vpage-find {
+.vpage-actions {
+  grid-template-columns: 1fr 1fr;
+}
+.vpage-actions .primary {
   grid-column: 1 / -1;
+}
+.vpage-actions .vpage-empty {
+  grid-column: 1 / -1;
+}
+.vhero-hint {
+  margin-top: -8px;
+  font-size: 0.8125rem;
+  color: var(--muted);
+  text-align: center;
+}
+.vpage-actions .vpage-find,
+.vpage-actions button:not(.primary) {
   min-height: 44px;
   font-size: 1rem;
 }
@@ -1414,6 +1504,11 @@ button:disabled {
 }
 .vpage-label {
   margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.vcard > .hint {
+  font-size: 0.8125rem;
   color: var(--muted);
 }
 .vpage-modes.vpage-suction {
@@ -1559,5 +1654,113 @@ button:disabled {
   }
   .toast {
     bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+}
+
+/* a fault the robot reports, and the part-replaced question */
+.vfault {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--signal);
+  border-radius: 10px;
+  background: rgba(255, 90, 78, 0.08);
+  display: grid;
+  gap: 4px;
+  font-size: 0.9375rem;
+}
+.vfault-title {
+  font-weight: 600;
+  color: var(--signal);
+}
+.care-replaced {
+  justify-self: start;
+  margin-top: 8px;
+  min-height: 44px;
+  background: transparent;
+  color: var(--muted);
+}
+.care-ask {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.care-ask span {
+  flex: 1 1 100%;
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+.care-ask button {
+  min-height: 44px;
+}
+
+/* on/off settings: a label with its hint, and a switch */
+.switch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.switch-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.switch-list li:first-child {
+  padding-top: 0;
+}
+.switch-hint {
+  color: var(--muted);
+  font-size: 0.8125rem;
+}
+.switch {
+  flex: none;
+  position: relative;
+  width: 52px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.switch::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 52px;
+  height: 28px;
+  margin-top: -14px;
+  border-radius: 14px;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  transition: background 0.2s, border-color 0.2s;
+}
+.switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 4px;
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.2s, background 0.2s;
+}
+.switch[aria-checked="true"]::before {
+  background: var(--slate-2);
+  border-color: var(--focus);
+}
+.switch[aria-checked="true"] .switch-knob {
+  transform: translateX(24px);
+  background: var(--focus);
+}
+@media (prefers-reduced-motion: reduce) {
+  .switch::before,
+  .switch-knob {
+    transition: none;
   }
 }

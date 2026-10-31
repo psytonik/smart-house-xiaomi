@@ -307,8 +307,8 @@ export async function resetStream(): Promise<{ otherViewers: number }> {
   return (await res.json()) as { otherViewers: number };
 }
 
-export type VacuumMode = "cleaning" | "paused" | "idle" | "returning" | "charging" | "charged" | "error" | "unknown";
-export type VacuumAction = "start" | "pause" | "dock" | "find";
+export type VacuumMode = "cleaning" | "paused" | "idle" | "returning" | "charging" | "charged" | "emptying" | "updating" | "error" | "unknown";
+export type VacuumAction = "start" | "pause" | "dock" | "find" | "empty";
 
 export type SuctionLevel = "quiet" | "standard" | "strong" | "turbo";
 export type WaterLevel = "low" | "medium" | "high";
@@ -318,6 +318,7 @@ export interface VacuumState {
   reachable?: boolean;
   battery?: number;
   mode?: VacuumMode;
+  fault?: { code: number; title: string; hint: string };
   model?: string;
   firmware?: string;
   areaM2?: number;
@@ -325,6 +326,7 @@ export interface VacuumState {
   cleaningMode?: CleaningMode;
   suction?: SuctionLevel;
   water?: WaterLevel;
+  dustStation?: { autoEmpty: boolean; ready: boolean; emptying: boolean; limited: boolean };
 }
 
 export async function getVacuum(): Promise<VacuumState> {
@@ -342,6 +344,7 @@ export interface VacuumCare {
   mainBrush: PartWear;
   sideBrush: PartWear;
   filter: PartWear;
+  sensor?: PartWear;
   totals: { firstCleanAt?: string; minutes?: number; cleanings?: number; areaM2?: number };
 }
 
@@ -363,6 +366,49 @@ export async function getVacuumHistory(): Promise<CleaningRecord[]> {
   const res = await api("/api/vacuum/history");
   if (!res.ok) throw new Error(await errorText(res, "Couldn't read the cleaning history"));
   return ((await res.json()) as { cleanings: CleaningRecord[] }).cleanings;
+}
+
+export type VacuumPartName = "mainBrush" | "sideBrush" | "filter" | "sensor";
+
+export type VacuumSwitch = "resumeCleaning" | "carpetBoost" | "obstacleAvoidance" | "childLock" | "dnd";
+
+/** The robot's own settings. Whatever it doesn't report is missing. */
+export interface VacuumSettings {
+  resumeCleaning?: boolean;
+  carpetBoost?: boolean;
+  obstacleAvoidance?: boolean;
+  customizedCleaning?: boolean;
+  childLock?: boolean;
+  carpetSensitivity?: "low" | "medium" | "high";
+  dnd?: { enabled: boolean; from?: string; to?: string };
+  volume?: number;
+  autoEmptyFrequency?: number;
+}
+
+export async function getVacuumSettings(): Promise<VacuumSettings> {
+  const res = await api("/api/vacuum/settings");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the robot's settings"));
+  return (await res.json()) as VacuumSettings;
+}
+
+/** Switches one setting on or off. The error says why when the robot didn't take it. */
+export async function sendVacuumSwitch(name: VacuumSwitch, on: boolean): Promise<void> {
+  const res = await api("/api/vacuum/setting", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name, on }),
+  });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't change the setting"));
+}
+
+/** After changing a brush or the filter: starts its wear counter again from 100%. */
+export async function resetVacuumPart(part: VacuumPartName): Promise<void> {
+  const res = await api("/api/vacuum/reset", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ part }),
+  });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't reset the counter"));
 }
 
 export async function sendVacuum(action: VacuumAction): Promise<void> {

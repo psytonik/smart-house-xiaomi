@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api";
 import { FloorPlan, VacuumPage } from "./VacuumPage";
 
-vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getVacuum: vi.fn(), sendVacuum: vi.fn(), fetchVacuumMap: vi.fn(), refreshVacuumMap: vi.fn(), getVacuumLive: vi.fn(), sendCleaningMode: vi.fn(), getVacuumCare: vi.fn(), getVacuumHistory: vi.fn(), sendSuction: vi.fn(), sendWater: vi.fn() }));
+vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getVacuum: vi.fn(), sendVacuum: vi.fn(), fetchVacuumMap: vi.fn(), refreshVacuumMap: vi.fn(), getVacuumLive: vi.fn(), sendCleaningMode: vi.fn(), getVacuumCare: vi.fn(), getVacuumHistory: vi.fn(), resetVacuumPart: vi.fn(), getVacuumSettings: vi.fn(), sendVacuumSwitch: vi.fn(), sendSuction: vi.fn(), sendWater: vi.fn() }));
 
 describe("VacuumPage", () => {
   beforeEach(() => {
@@ -13,6 +13,8 @@ describe("VacuumPage", () => {
     vi.mocked(api.sendSuction).mockResolvedValue();
     vi.mocked(api.sendWater).mockResolvedValue();
     vi.mocked(api.getVacuumCare).mockRejectedValue(new Error("no care"));
+    vi.mocked(api.getVacuumSettings).mockRejectedValue(new Error("no settings"));
+    vi.mocked(api.sendVacuumSwitch).mockResolvedValue();
     vi.mocked(api.getVacuumHistory).mockRejectedValue(new Error("no history"));
     vi.mocked(api.refreshVacuumMap).mockResolvedValue();
     vi.mocked(api.getVacuumLive).mockResolvedValue({ map: { width: 10, height: 20 }, robot: { x: 3, y: 4 }, trail: [{ x: 1, y: 1 }, { x: 3, y: 4 }], ageSeconds: 1, live: true });
@@ -94,6 +96,98 @@ describe("VacuumPage", () => {
     render(<VacuumPage onLogout={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "Pause" }));
     await waitFor(() => expect(api.sendVacuum).toHaveBeenCalledWith("pause"));
+  });
+
+  it("empties the bin from the dock, and only while the robot is on it", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 100, mode: "charged", dustStation: { autoEmpty: true, ready: true, emptying: false, limited: false } });
+    render(<VacuumPage onLogout={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Empty the bin" }));
+    await waitFor(() => expect(api.sendVacuum).toHaveBeenCalledWith("empty"));
+
+    cleanup();
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 60, mode: "cleaning", dustStation: { autoEmpty: true, ready: false, emptying: false, limited: false } });
+    render(<VacuumPage onLogout={() => {}} />);
+    expect(((await screen.findByRole("button", { name: "Empty the bin" })) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText(/when the robot is on its dock/)).toBeTruthy();
+
+    cleanup();
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 100, mode: "charged", dustStation: { autoEmpty: true, ready: true, emptying: true, limited: false } });
+    render(<VacuumPage onLogout={() => {}} />);
+    expect(((await screen.findByRole("button", { name: "Emptying the bin…" })) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("says what is wrong and what to do, and what the dock won't do", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 40, mode: "error", fault: { code: 12, title: "Main brush is tangled", hint: "Take the main brush out." } });
+    render(<VacuumPage onLogout={() => {}} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("Main brush is tangled");
+    expect(screen.getByText("Take the main brush out.")).toBeTruthy();
+
+    cleanup();
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 100, mode: "charged", dustStation: { autoEmpty: true, ready: false, emptying: false, limited: true } });
+    render(<VacuumPage onLogout={() => {}} />);
+    expect(await screen.findByText(/won't empty the bin again so soon/)).toBeTruthy();
+  });
+
+  it("asks before it tells the robot a part is new, then reads the wear again", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    const wear = (p: number) => ({ mainBrush: { percent: p, hoursLeft: 100 }, sideBrush: { percent: 100 }, filter: { percent: 61 }, totals: {} });
+    vi.mocked(api.resetVacuumPart).mockResolvedValue();
+    vi.mocked(api.getVacuumCare).mockResolvedValueOnce(wear(10)).mockResolvedValue(wear(100));
+    render(<VacuumPage onLogout={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Main brush replaced" }));
+    expect(api.resetVacuumPart).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(api.resetVacuumPart).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Main brush replaced" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, it's new" }));
+    await waitFor(() => expect(api.resetVacuumPart).toHaveBeenCalledWith("mainBrush"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Main brush replaced" })).toBeNull()); // at 100% there is nothing to reset
+  });
+
+  it("shows the robot's settings and switches one, then shows what the robot really has", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    const settings = (childLock: boolean) => ({ resumeCleaning: true, carpetBoost: true, obstacleAvoidance: true, customizedCleaning: true, childLock, carpetSensitivity: "high" as const, dnd: { enabled: true, from: "22:00", to: "08:00" }, volume: 100 });
+    vi.mocked(api.getVacuumSettings).mockResolvedValueOnce(settings(false)).mockResolvedValue(settings(true));
+    render(<VacuumPage onLogout={() => {}} />);
+    const lock = (await screen.findByRole("switch", { name: "Child lock" })) as HTMLButtonElement;
+    expect(lock.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("switch", { name: "Do not disturb" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/22:00 to 08:00/)).toBeTruthy();
+    expect(screen.getByText("On, suction and water are kept per room")).toBeTruthy();
+    expect(screen.getByText("High")).toBeTruthy();
+    expect(screen.getByText("100%")).toBeTruthy();
+    fireEvent.click(lock);
+    await waitFor(() => expect(api.sendVacuumSwitch).toHaveBeenCalledWith("childLock", true));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Child lock" }).getAttribute("aria-checked")).toBe("true"));
+  });
+
+  it("says why when the robot refuses a setting, and keeps showing its own value", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    vi.mocked(api.getVacuumSettings).mockResolvedValue({ carpetBoost: true });
+    vi.mocked(api.sendVacuumSwitch).mockRejectedValue(new Error("the vacuum kept its old setting"));
+    render(<VacuumPage onLogout={() => {}} />);
+    fireEvent.click(await screen.findByRole("switch", { name: "Carpet boost" }));
+    expect(await screen.findByText(/kept its old setting/)).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Carpet boost" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByRole("switch", { name: "Child lock" })).toBeNull(); // not reported: not shown
+  });
+
+  it("offers to reset the sensors counter after wiping them", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    vi.mocked(api.getVacuumCare).mockResolvedValue({ mainBrush: { percent: 100 }, sideBrush: { percent: 100 }, filter: { percent: 100 }, sensor: { percent: 58, hoursLeft: 17 }, totals: {} });
+    vi.mocked(api.resetVacuumPart).mockResolvedValue();
+    render(<VacuumPage onLogout={() => {}} />);
+    expect(await screen.findByText("58% left, about 17 h")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Sensors cleaned" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes, wiped" }));
+    await waitFor(() => expect(api.resetVacuumPart).toHaveBeenCalledWith("sensor"));
+  });
+
+  it("has no empty button for a robot without a dust station", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 100, mode: "charged" });
+    render(<VacuumPage onLogout={() => {}} />);
+    await screen.findByText("Charged, at the dock");
+    expect(screen.queryByRole("button", { name: /empty the bin/i })).toBeNull();
   });
 
   it("shows suction and water and changes them, and says why when the robot keeps its own", async () => {

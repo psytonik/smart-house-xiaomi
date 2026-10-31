@@ -8,7 +8,7 @@ import { addDetail, decodeCloudMap, decodeLiveFrame, decodePiece, geometryOf, is
 import { CloudError, deviceData, downloadCloudFile, idsFromObjectName } from "../xiaomiCloud.js";
 import { LevelKeeper } from "../vacuumLevels.js";
 import { VacuumWatcher } from "../vacuumWatcher.js";
-import { CLEANING_MODE_NAMES, parseCleaningRecord, SUCTION_NAMES, Vacuum, VACUUM_ACTIONS, WATER_NAMES, type CleaningMode, type SuctionLevel, type VacuumAction, type WaterLevel } from "../vacuum.js";
+import { CLEANING_MODE_NAMES, parseCleaningRecord, SUCTION_NAMES, Vacuum, SETTING_NAMES, VACUUM_ACTIONS, VACUUM_PARTS, WATER_NAMES, type CleaningMode, type SuctionLevel, type SettingName, type VacuumAction, type VacuumPart, type WaterLevel } from "../vacuum.js";
 
 /** Robot vacuum over the local network. Configured with VACUUM_IP and VACUUM_TOKEN (backend/.env). */
 export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.ProcessEnv = process.env): void {
@@ -73,12 +73,61 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
     async (req) => {
       if (!vacuum) throw new HttpError(404, "vacuum is not configured (set VACUUM_IP and VACUUM_TOKEN)");
       try {
+        if (req.body.action === "empty") {
+          // the dock can only empty a robot that is sitting on it; say so instead of sending a command that does nothing
+          const state = await vacuum.state();
+          if (!state.dustStation) throw new HttpError(409, "this robot has no dust station");
+          if (!state.dustStation.ready) throw new HttpError(409, "the robot has to be on its dock to empty its bin");
+          if (state.dustStation.emptying) throw new HttpError(409, "the dock is already emptying the bin");
+        }
         await vacuum.run(req.body.action);
       } catch (e) {
         if (e instanceof MiioError) throw new HttpError(502, e.message);
         throw e;
       }
       if (req.body.action === "start") levels?.afterStart(afterStartMs);
+      return { ok: true };
+    },
+  );
+
+  app.get("/api/vacuum/settings", async () => {
+    if (!vacuum) throw new HttpError(404, "vacuum is not configured (set VACUUM_IP and VACUUM_TOKEN)");
+    try {
+      return await vacuum.settings();
+    } catch (e) {
+      if (e instanceof MiioError) throw new HttpError(502, e.message);
+      throw e;
+    }
+  });
+
+  // One on/off setting of the robot. The answer is 502 with the reason when the robot didn't take it.
+  app.post<{ Body: { name: SettingName; on: boolean } }>(
+    "/api/vacuum/setting",
+    { schema: { body: { type: "object", additionalProperties: false, required: ["name", "on"], properties: { name: { type: "string", enum: SETTING_NAMES }, on: { type: "boolean" } } } } },
+    async (req) => {
+      if (!vacuum) throw new HttpError(404, "vacuum is not configured (set VACUUM_IP and VACUUM_TOKEN)");
+      try {
+        await vacuum.setSetting(req.body.name, req.body.on);
+      } catch (e) {
+        if (e instanceof MiioError) throw new HttpError(502, e.message);
+        throw e;
+      }
+      return { ok: true };
+    },
+  );
+
+  // After changing a brush or the filter: its wear counter starts again from 100%.
+  app.post<{ Body: { part: VacuumPart } }>(
+    "/api/vacuum/reset",
+    { schema: { body: { type: "object", additionalProperties: false, required: ["part"], properties: { part: { type: "string", enum: VACUUM_PARTS } } } } },
+    async (req) => {
+      if (!vacuum) throw new HttpError(404, "vacuum is not configured (set VACUUM_IP and VACUUM_TOKEN)");
+      try {
+        await vacuum.resetPart(req.body.part);
+      } catch (e) {
+        if (e instanceof MiioError) throw new HttpError(502, e.message);
+        throw e;
+      }
       return { ok: true };
     },
   );
