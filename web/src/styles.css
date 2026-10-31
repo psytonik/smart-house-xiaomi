@@ -1444,14 +1444,18 @@ button:disabled {
 }
 .care-line {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 6px;
 }
-.care-line span:last-child {
-  color: var(--muted);
+.care-line span:first-child {
+  flex: 1;
 }
-.care-worn .care-line span:last-child {
+.care-line span:nth-child(2) {
+  color: var(--muted);
+  text-align: right;
+}
+.care-worn .care-line span:nth-child(2) {
   color: var(--signal);
 }
 .care-part meter {
@@ -1510,6 +1514,7 @@ button:disabled {
 .vcard > .hint {
   font-size: 0.8125rem;
   color: var(--muted);
+  max-width: none;
 }
 .vpage-modes.vpage-suction {
   grid-template-columns: repeat(4, 1fr);
@@ -1673,11 +1678,13 @@ button:disabled {
   color: var(--signal);
 }
 .care-replaced {
-  justify-self: start;
-  margin-top: 8px;
+  flex: none;
   min-height: 44px;
+  margin: -10px 0;
+  padding: 4px 12px;
   background: transparent;
   color: var(--muted);
+  font-size: 0.875rem;
 }
 .care-ask {
   margin-top: 8px;
@@ -1763,4 +1770,54 @@ button:disabled {
   .switch-knob {
     transition: none;
   }
+}
+
+/* the rooms to clean */
+.room-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.room-list li {
+  border-bottom: 1px solid var(--line);
+}
+.room-list label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  cursor: pointer;
+}
+.room-list input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--focus);
+}
+.room-name {
+  flex: 1;
+}
+.room-area {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.room-order {
+  min-width: 24px;
+  padding: 0 6px;
+  border-radius: 12px;
+  background: var(--focus);
+  color: var(--ink);
+  font-weight: 600;
+  text-align: center;
+}
+.vcard > button.primary {
+  min-height: 52px;
+  background: var(--focus);
+  border-color: var(--focus);
+  color: var(--ink);
+  font-weight: 600;
+}
+.vcard > button.primary:disabled {
+  background: var(--slate-2);
+  border-color: var(--line);
+  color: var(--muted);
 }

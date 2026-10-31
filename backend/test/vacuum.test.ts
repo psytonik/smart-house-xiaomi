@@ -336,6 +336,33 @@ describe("vacuum API (mock device)", () => {
     assert.equal(actions.length, before + 1);
   });
 
+  it("lists the rooms of the saved map, and cleans the chosen ones in order", async () => {
+    const roomsFile = join(dir, "vacuum-map-live-rooms.json");
+    rmSync(roomsFile, { force: true });
+    assert.equal((await app.inject({ url: "/api/vacuum/rooms", headers: auth })).statusCode, 409, "no floor plan drawn yet");
+    const clean = (rooms: unknown) => app.inject({ method: "POST", url: "/api/vacuum/clean-rooms", headers: auth, payload: { rooms } });
+    assert.equal((await clean([1])).statusCode, 409);
+
+    writeFileSync(roomsFile, JSON.stringify([{ id: 1, name: "Kitchen", areaM2: 9, center: { x: 5, y: 5 } }, { id: 3, name: "Bathroom", areaM2: 4, center: { x: 9, y: 2 } }]));
+    assert.deepEqual((await app.inject({ url: "/api/vacuum/rooms", headers: auth })).json().rooms.map((r: { id: number }) => r.id), [1, 3]);
+
+    const before = actions.length;
+    status = 1; // cleaning
+    assert.equal((await clean([1])).statusCode, 409, "busy");
+    status = 6;
+    assert.equal((await clean([7])).statusCode, 400, "a room the map doesn't have");
+    for (const bad of [[], [0], [1, 1], [64]]) assert.equal((await clean(bad)).statusCode, 400, JSON.stringify(bad));
+    assert.equal(actions.length, before, "nothing was sent to the robot");
+
+    assert.equal((await clean([3, 1])).statusCode, 200);
+    const sent = actions.at(-1);
+    assert.deepEqual([sent.siid, sent.aiid], [4, 1]);
+    assert.deepEqual(sent.in[0], { piid: 1, value: 18 }, "status 18 = segment cleaning");
+    // [room, times, suction (standard = 1), water (medium = 2), order]
+    assert.deepEqual(JSON.parse(sent.in[1].value), { selects: [[3, 1, 1, 2, 1], [1, 1, 1, 2, 2]] });
+    assert.equal(sent.in[1].piid, 10);
+  });
+
   it("refuses anything that is not a known action", async () => {
     for (const payload of [{}, { action: "empty-bin" }, { action: 3 }]) {
       const res = await app.inject({ method: "POST", url: "/api/vacuum", headers: auth, payload });

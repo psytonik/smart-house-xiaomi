@@ -370,6 +370,30 @@ export async function getVacuumHistory(): Promise<CleaningRecord[]> {
 
 export type VacuumPartName = "mainBrush" | "sideBrush" | "filter" | "sensor";
 
+/** A room of the robot's saved map. */
+export interface VacuumRoom {
+  id: number;
+  name: string;
+  areaM2: number;
+}
+
+/** The rooms of the saved map. Empty while the robot has been taught none; the error says so when the floor plan was never drawn. */
+export async function getVacuumRooms(): Promise<VacuumRoom[]> {
+  const res = await api("/api/vacuum/rooms");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the rooms"));
+  return ((await res.json()) as { rooms: VacuumRoom[] }).rooms;
+}
+
+/** Starts a cleaning of these rooms, in this order. */
+export async function cleanVacuumRooms(rooms: number[]): Promise<void> {
+  const res = await api("/api/vacuum/clean-rooms", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ rooms }),
+  });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't start the cleaning"));
+}
+
 export type VacuumSwitch = "resumeCleaning" | "carpetBoost" | "obstacleAvoidance" | "childLock" | "dnd";
 
 /** The robot's own settings. Whatever it doesn't report is missing. */

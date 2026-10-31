@@ -7,6 +7,7 @@ import { MiioDevice, MiioError } from "../miio.js";
 import { addDetail, decodeCloudMap, decodeLiveFrame, decodePiece, geometryOf, isGeometry, renderMapPng, routeOf, toCells, VacuumMapError, DEFAULT_COLORS, type MapGeometry, type MapPiece, type Point } from "../vacuumMap.js";
 import { CloudError, deviceData, downloadCloudFile, idsFromObjectName } from "../xiaomiCloud.js";
 import { LevelKeeper } from "../vacuumLevels.js";
+import { roomsOf, type Room } from "../vacuumRooms.js";
 import { VacuumWatcher } from "../vacuumWatcher.js";
 import { CLEANING_MODE_NAMES, parseCleaningRecord, SUCTION_NAMES, Vacuum, SETTING_NAMES, VACUUM_ACTIONS, VACUUM_PARTS, WATER_NAMES, type CleaningMode, type SuctionLevel, type SettingName, type VacuumAction, type VacuumPart, type WaterLevel } from "../vacuum.js";
 
@@ -184,6 +185,7 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
   const liveMapFile = join(ctx.cfg.dataDir, "vacuum-map-live.png");
   const staticMapFile = join(ctx.cfg.dataDir, "vacuum-map.png");
   const geometryFile = join(ctx.cfg.dataDir, "vacuum-map-live.json");
+  const roomsFile = join(ctx.cfg.dataDir, "vacuum-map-live-rooms.json");
   app.get("/api/vacuum/map", async (_req, reply) => {
     const mapFile = existsSync(liveMapFile) ? liveMapFile : staticMapFile;
     if (!existsSync(mapFile)) throw new HttpError(404, "no floor plan yet (run tools/xiaomi-cloud.ts map, or put vacuum-map.png in backend/data)");
@@ -253,6 +255,7 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
         writeFileSync(temp, renderMapPng(map, 5, DEFAULT_COLORS, route));
         renameSync(temp, liveMapFile); // the picture is replaced whole, never half written
         writeFileSync(geometryFile, JSON.stringify(geometryOf(map)));
+        writeFileSync(roomsFile, JSON.stringify(roomsOf(saved))); // from the saved map: the detail drawn over it has no rooms
       } finally {
         refreshing = undefined;
       }
@@ -266,6 +269,42 @@ export function vacuumRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.
     }
     return { ok: true };
   });
+
+  // The rooms of the saved map, found when the floor plan was last redrawn. Empty while the robot has been taught no rooms.
+  const savedRooms = (): Room[] => {
+    try {
+      const rooms = JSON.parse(readFileSync(roomsFile, "utf8"));
+      return Array.isArray(rooms) ? (rooms as Room[]) : [];
+    } catch {
+      throw new HttpError(409, "update the floor plan first: the rooms are read from it");
+    }
+  };
+  app.get("/api/vacuum/rooms", async () => {
+    if (!vacuum) throw new HttpError(404, "vacuum is not configured (set VACUUM_IP and VACUUM_TOKEN)");
+    return { rooms: savedRooms() };
+  });
+
+  // Cleans the chosen rooms, in the order given, with the suction and water the robot has now. Starts the robot: only when it is idle or docked.
+  app.post<{ Body: { rooms: number[] } }>(
+    "/api/vacuum/clean-rooms",
+    { schema: { body: { type: "object", additionalProperties: false, required: ["rooms"], properties: { rooms: { type: "array", minItems: 1, maxItems: 16, uniqueItems: true, items: { type: "integer", minimum: 1, maximum: 63 } } } } } },
+    async (req) => {
+      if (!vacuum) throw new HttpError(404, "vacuum is not configured (set VACUUM_IP and VACUUM_TOKEN)");
+      const known = new Set(savedRooms().map((r) => r.id));
+      const unknown = req.body.rooms.filter((id) => !known.has(id));
+      if (unknown.length) throw new HttpError(400, `the saved map has no room ${unknown.join(", ")}`);
+      try {
+        const state = await vacuum.state();
+        if (state.mode === "cleaning" || state.mode === "returning" || state.mode === "error" || state.mode === "updating") throw new HttpError(409, "the robot is busy: wait until it is idle or on its dock");
+        await vacuum.cleanRooms(req.body.rooms, state.suction ?? "standard", state.water ?? "medium");
+      } catch (e) {
+        if (e instanceof MiioError) throw new HttpError(502, e.message);
+        throw e;
+      }
+      levels?.afterStart(afterStartMs);
+      return { ok: true };
+    },
+  );
 
   // Where the robot is right now and the trail it just drove, placed on the floor plan picture (in map cells).
   // The robot reports this to the Xiaomi cloud about every two seconds while it moves.

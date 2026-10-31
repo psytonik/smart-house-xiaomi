@@ -351,6 +351,24 @@ export class Vacuum {
     return name.split(",")[0]!; // a "name,key" pair means encrypted: the key part is not needed for the file name
   }
 
+  /**
+   * Starts a cleaning of the given rooms (segment numbers of the saved map), in this order, once each with the given suction and
+   * water. Dreame MIoT action 4/1 with status 18 ("segment cleaning") and the list of rooms as JSON, the way the Dreamehome app does it.
+   */
+  async cleanRooms(rooms: number[], suction: SuctionLevel, water: WaterLevel): Promise<void> {
+    const selects = rooms.map((id, i) => [id, 1, SUCTION_VALUE[suction], WATER_VALUE[water], i + 1]);
+    const res = (await this.device.call("action", {
+      did: "x",
+      siid: 4,
+      aiid: 1,
+      in: [
+        { piid: 1, value: 18 },
+        { piid: 10, value: JSON.stringify({ selects }) },
+      ],
+    })) as { code?: number } | undefined;
+    if (res?.code !== undefined && res.code !== 0) throw new MiioError(`the vacuum could not start cleaning those rooms (code ${res.code})`);
+  }
+
   /** Asks the robot to send its current map (a full "I" frame) to the cloud, the way the app does when you open the map. */
   async requestMap(): Promise<void> {
     const res = (await this.device.call("action", { did: "x", siid: 6, aiid: 1, in: [{ piid: 2, value: '{"frame_type":"I"}' }] })) as { code?: number } | undefined;

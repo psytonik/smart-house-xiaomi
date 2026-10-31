@@ -16,6 +16,8 @@ export type VacuumMap = {
   cells: Uint8Array;
   /** Same size as `cells`, 1 where something stands on the floor (furniture and the like). Kept apart because room numbers use the same bytes. */
   obstacles?: Uint8Array;
+  /** What the frame's JSON tail says about each segment (room), by number: its kind and neighbours. */
+  segments?: Record<string, { type?: number; index?: number; nei_id?: number[] }>;
   /** Dock and robot positions in cells, if the frame says so. */
   charger?: { x: number; y: number };
   robot?: { x: number; y: number };
@@ -68,6 +70,14 @@ export function decodeCloudMap(fileText: string): VacuumMap {
   const charger = cell(chargerXY.x, chargerXY.y);
   const robot = cell(robotXY.x, robotXY.y);
 
+  let segments: VacuumMap["segments"];
+  try {
+    const tail = JSON.parse(raw.subarray(HEADER + width * height).toString("utf8")) as { seg_inf?: unknown };
+    if (tail.seg_inf && typeof tail.seg_inf === "object" && !Array.isArray(tail.seg_inf)) segments = tail.seg_inf as VacuumMap["segments"];
+  } catch {
+    /* no tail, or not JSON: the map is still good, there are just no room kinds */
+  }
+
   return {
     name: entry.name ?? "",
     mapId: raw.readUInt16LE(0),
@@ -77,6 +87,7 @@ export function decodeCloudMap(fileText: string): VacuumMap {
     leftMm,
     topMm,
     cells: new Uint8Array(raw.subarray(HEADER, HEADER + width * height)),
+    ...(segments && { segments }),
     // (0, 0) in millimetres means "unknown" in this format
     charger: (chargerXY.x || chargerXY.y) && inside(charger) ? charger : undefined,
     robot: (robotXY.x || robotXY.y) && inside(robot) ? robot : undefined,

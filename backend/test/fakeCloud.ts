@@ -4,7 +4,7 @@ import { deflateSync } from "node:zlib";
 import { encSignature, rc4, signedNonce, type CloudSession } from "../src/xiaomiCloud.js";
 
 /** The text of a cloud map file for a small test map. Cells: 0 outside, 1 floor, 129 wall. */
-export function cloudMapFile(opts: { width: number; height: number; cells: number[]; chargerMm?: [number, number]; robotMm?: [number, number]; name?: string }): string {
+export function cloudMapFile(opts: { width: number; height: number; cells: number[]; chargerMm?: [number, number]; robotMm?: [number, number]; name?: string; segInf?: object }): string {
   const { width, height, cells } = opts;
   const header = Buffer.alloc(27);
   header.writeUInt16LE(95, 0); // map id
@@ -20,7 +20,7 @@ export function cloudMapFile(opts: { width: number; height: number; cells: numbe
   header.writeUInt16LE(height, 21);
   header.writeInt16LE(-100, 23);
   header.writeInt16LE(-200, 25);
-  const tail = Buffer.from('{"vw":{"line":[],"rect":[],"mop":[]},"seg_inf":{"1":{"nei_id":[]}}}');
+  const tail = Buffer.from(JSON.stringify({ vw: { line: [], rect: [], mop: [] }, seg_inf: opts.segInf ?? { "1": { nei_id: [] } } }));
   const packed = deflateSync(Buffer.concat([header, Buffer.from(cells), tail])).toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
   return JSON.stringify({ mapstr: [{ id: 0, name: opts.name ?? "Home", angle: "0", map: packed }], curr_id: 95 });
 }

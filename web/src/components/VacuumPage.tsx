@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AuthError, fetchVacuumMap, getVacuumCare, getVacuumHistory, getVacuumSettings, refreshVacuumMap, resetVacuumPart, sendVacuumSwitch, type VacuumPartName, type VacuumSettings, type VacuumSwitch, type CleaningMode, type CleaningRecord, type SuctionLevel, type WaterLevel, type PartWear, type VacuumCare } from "../api";
+import { AuthError, fetchVacuumMap, getVacuumCare, getVacuumHistory, getVacuumRooms, getVacuumSettings, cleanVacuumRooms, type VacuumRoom, refreshVacuumMap, resetVacuumPart, sendVacuumSwitch, type VacuumPartName, type VacuumSettings, type VacuumSwitch, type CleaningMode, type CleaningRecord, type SuctionLevel, type WaterLevel, type PartWear, type VacuumCare } from "../api";
 import { Shell } from "./Shell";
 import { useLivePosition } from "../useLivePosition";
 import { useVacuum } from "../useVacuum";
@@ -69,6 +69,7 @@ export function VacuumPage({ onLogout }: { onLogout: () => void }) {
                 <FloorPlan moving={state.mode === "cleaning" || state.mode === "returning"} onAuthError={onLogout} onError={fail} onNotice={say} />
               </section>
             )}
+            {state?.reachable && <Rooms busy={state.mode === "cleaning" || state.mode === "returning" || state.mode === "error"} onAuthError={onLogout} onError={fail} onNotice={say} onStarted={reload} />}
             {state?.reachable && <Care onAuthError={onLogout} onError={fail} />}
             {state?.reachable && <History onAuthError={onLogout} />}
             {state?.reachable && <RobotSettings onAuthError={onLogout} onError={fail} />}
@@ -197,6 +198,69 @@ function Settings({ state, busy, setMode, setLevel }: { state: VacuumState; busy
       {state.water && <Choice id="water-label" label="Water" labels={WATER_LABEL} value={state.water} disabled={busy} onPick={(l: WaterLevel) => void setLevel("water", l)} />}
       {state.cleaningMode && moving && <p className="hint">The mode can be changed when the robot isn't cleaning.</p>}
       {(state.suction || state.water) && <p className="hint">The robot resets suction and water to the maximum at every start, so your choice is put back a few seconds after it begins.</p>}
+    </section>
+  );
+}
+
+/**
+ * Clean some rooms and not the whole home. Shown only when the robot has been taught rooms (in the Dreamehome app); the rooms are
+ * cleaned in the order they were picked.
+ */
+function Rooms({ busy, onAuthError, onError, onNotice, onStarted }: { busy: boolean; onAuthError: () => void; onError: (e: unknown) => void; onNotice: (text: string) => void; onStarted: () => void }) {
+  const [rooms, setRooms] = useState<VacuumRoom[]>([]);
+  const [picked, setPicked] = useState<number[]>([]);
+  const [starting, setStarting] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    getVacuumRooms()
+      .then((r) => alive && setRooms(r))
+      .catch((e) => {
+        if (e instanceof AuthError) onAuthError(); // no floor plan yet or no answer: no rooms to show
+      });
+    return () => {
+      alive = false;
+    };
+  }, [onAuthError]);
+  if (rooms.length < 2) return null;
+
+  const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]));
+  const start = async () => {
+    setStarting(true);
+    try {
+      await cleanVacuumRooms(picked);
+      onNotice(`Cleaning ${picked.length === 1 ? "1 room" : `${picked.length} rooms`}`);
+      setPicked([]);
+      window.setTimeout(onStarted, 1500);
+    } catch (e) {
+      if (e instanceof AuthError) onAuthError();
+      else onError(e);
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  return (
+    <section className="vcard" aria-labelledby="rooms-title">
+      <h2 id="rooms-title">Rooms</h2>
+      <ul className="room-list">
+        {rooms.map((r) => {
+          const order = picked.indexOf(r.id) + 1;
+          return (
+            <li key={r.id}>
+              <label>
+                <input type="checkbox" checked={order > 0} onChange={() => toggle(r.id)} disabled={busy || starting} />
+                <span className="room-name">{r.name}</span>
+                <span className="room-area">{r.areaM2} m²</span>
+                {order > 0 && <span className="room-order" aria-label={`number ${order} in the order`}>{order}</span>}
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      <button type="button" className="primary" disabled={busy || starting || picked.length === 0} onClick={() => void start()}>
+        {picked.length === 0 ? "Pick the rooms to clean" : `Clean ${picked.length === 1 ? "1 room" : `${picked.length} rooms`}`}
+      </button>
+      {busy && <p className="hint">The robot is busy: rooms can be picked when it is idle or on its dock.</p>}
     </section>
   );
 }
@@ -332,12 +396,17 @@ function WearRow({ name, wear, onReset, done = "Replaced", question = "Start cou
           {wear.percent}% left{wear.hoursLeft !== undefined ? `, about ${wear.hoursLeft} h` : ""}
           {worn ? ", replace soon" : ""}
         </span>
+        {wear.percent < 100 && !asking && (
+          <button type="button" className="care-replaced" onClick={() => setAsking(true)} aria-label={`${name} ${done.toLowerCase()}`}>
+            {done}
+          </button>
+        )}
       </div>
       <meter min={0} max={100} low={WORN_PERCENT} optimum={100} value={wear.percent} aria-labelledby={`care-${name}`}>
         {wear.percent}%
       </meter>
       {wear.percent < 100 &&
-        (asking ? (
+        asking && (
           <div className="care-ask" role="group" aria-label={`Reset ${name}`}>
             <span>{question.replace("{name}", name.toLowerCase())}</span>
             <button
@@ -357,11 +426,7 @@ function WearRow({ name, wear, onReset, done = "Replaced", question = "Start cou
               Cancel
             </button>
           </div>
-        ) : (
-          <button type="button" className="care-replaced" onClick={() => setAsking(true)} aria-label={`${name} ${done.toLowerCase()}`}>
-            {done}
-          </button>
-        ))}
+        )}
     </li>
   );
 }

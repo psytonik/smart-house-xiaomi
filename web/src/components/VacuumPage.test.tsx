@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api";
 import { FloorPlan, VacuumPage } from "./VacuumPage";
 
-vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getVacuum: vi.fn(), sendVacuum: vi.fn(), fetchVacuumMap: vi.fn(), refreshVacuumMap: vi.fn(), getVacuumLive: vi.fn(), sendCleaningMode: vi.fn(), getVacuumCare: vi.fn(), getVacuumHistory: vi.fn(), resetVacuumPart: vi.fn(), getVacuumSettings: vi.fn(), sendVacuumSwitch: vi.fn(), sendSuction: vi.fn(), sendWater: vi.fn() }));
+vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getVacuum: vi.fn(), sendVacuum: vi.fn(), fetchVacuumMap: vi.fn(), refreshVacuumMap: vi.fn(), getVacuumLive: vi.fn(), sendCleaningMode: vi.fn(), getVacuumCare: vi.fn(), getVacuumHistory: vi.fn(), resetVacuumPart: vi.fn(), getVacuumSettings: vi.fn(), getVacuumRooms: vi.fn(), cleanVacuumRooms: vi.fn(), sendVacuumSwitch: vi.fn(), sendSuction: vi.fn(), sendWater: vi.fn() }));
 
 describe("VacuumPage", () => {
   beforeEach(() => {
@@ -14,6 +14,8 @@ describe("VacuumPage", () => {
     vi.mocked(api.sendWater).mockResolvedValue();
     vi.mocked(api.getVacuumCare).mockRejectedValue(new Error("no care"));
     vi.mocked(api.getVacuumSettings).mockRejectedValue(new Error("no settings"));
+    vi.mocked(api.getVacuumRooms).mockResolvedValue([]);
+    vi.mocked(api.cleanVacuumRooms).mockResolvedValue();
     vi.mocked(api.sendVacuumSwitch).mockResolvedValue();
     vi.mocked(api.getVacuumHistory).mockRejectedValue(new Error("no history"));
     vi.mocked(api.refreshVacuumMap).mockResolvedValue();
@@ -181,6 +183,33 @@ describe("VacuumPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sensors cleaned" }));
     fireEvent.click(screen.getByRole("button", { name: "Yes, wiped" }));
     await waitFor(() => expect(api.resetVacuumPart).toHaveBeenCalledWith("sensor"));
+  });
+
+  it("cleans the picked rooms in the order they were picked", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    vi.mocked(api.getVacuumRooms).mockResolvedValue([{ id: 1, name: "Kitchen", areaM2: 9 }, { id: 3, name: "Bathroom", areaM2: 4 }, { id: 4, name: "Corridor", areaM2: 6 }]);
+    render(<VacuumPage onLogout={() => {}} />);
+    const start = (await screen.findByRole("button", { name: "Pick the rooms to clean" })) as HTMLButtonElement;
+    expect(start.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Corridor/ }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /Kitchen/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Clean 2 rooms" }));
+    await waitFor(() => expect(api.cleanVacuumRooms).toHaveBeenCalledWith([4, 1]));
+    expect(await screen.findByText("Cleaning 2 rooms")).toBeTruthy();
+  });
+
+  it("shows no rooms when the robot has none to pick, and locks them while it works", async () => {
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 90, mode: "idle" });
+    render(<VacuumPage onLogout={() => {}} />);
+    await screen.findByRole("button", { name: "Start cleaning" });
+    expect(screen.queryByText("Rooms")).toBeNull();
+
+    cleanup();
+    vi.mocked(api.getVacuum).mockResolvedValue({ configured: true, reachable: true, battery: 60, mode: "cleaning" });
+    vi.mocked(api.getVacuumRooms).mockResolvedValue([{ id: 1, name: "Kitchen", areaM2: 9 }, { id: 3, name: "Bathroom", areaM2: 4 }]);
+    render(<VacuumPage onLogout={() => {}} />);
+    expect(((await screen.findByRole("checkbox", { name: /Kitchen/ })) as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText(/The robot is busy/)).toBeTruthy();
   });
 
   it("has no empty button for a robot without a dust station", async () => {
