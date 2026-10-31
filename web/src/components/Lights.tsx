@@ -15,7 +15,7 @@ function lampState(l: Lamp): string {
 
 /**
  * All lamps (Wi-Fi and Bluetooth) behind one set of controls: a change goes to every lamp that answers.
- * The picture shown is the first reachable lamp that reports its state. Renders nothing without lamps.
+ * The picture shown is the first reachable lamp that reports its state.
  */
 export function Lights({ onAuthError, onError }: Props) {
   const [lamps, setLamps] = useState<Lamp[] | null>(null);
@@ -48,7 +48,8 @@ export function Lights({ onAuthError, onError }: Props) {
     if (ref) setView({ on: ref.on, brightness: ref.brightness, hue: ref.hue, saturation: ref.saturation });
   }, [lamps]);
 
-  if (!lamps || lamps.length === 0) return null;
+  if (!lamps) return <p className="hint">Looking for lamps…</p>;
+  if (lamps.length === 0) return <p className="hint">No lamps are set up.</p>;
 
   // One lamp on its own; the sliders below still move all of them together.
   const toggleOne = (l: Lamp) => {

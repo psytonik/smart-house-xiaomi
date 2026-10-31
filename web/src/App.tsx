@@ -21,14 +21,14 @@ import { Cameras } from "./components/Cameras";
 import { Clips } from "./components/Clips";
 import { Gallery } from "./components/Gallery";
 import { JogDial } from "./components/JogDial";
-import { Lights } from "./components/Lights";
+import { LightsPage } from "./components/LightsPage";
+import { Shell } from "./components/Shell";
 import { Login } from "./components/Login";
 import { Player, type Mode, type PlayerState } from "./components/Player";
 import { PrivacyOverlay } from "./components/PrivacyOverlay";
 import { SystemPanel } from "./components/SystemPanel";
-import { Vacuum } from "./components/Vacuum";
 import { VacuumPage } from "./components/VacuumPage";
-import { useHash } from "./useHash";
+import { useRoute } from "./route";
 import { ZoneEditor } from "./components/ZoneEditor";
 
 const MODES: Array<{ id: Mode; label: string; hint: string }> = [
@@ -198,118 +198,114 @@ function Monitor({ onLogout }: { onLogout: () => void }) {
             : "Connecting…";
 
   return (
-    <div className="monitor">
-      <header className="bar">
-        <div className="who">
-          <span className={`tally${live ? " on" : ""}`} aria-hidden="true" />
-          <h1>psytonik base</h1>
-          <span className="state" role="status">
-            {statusText}
-          </span>
-        </div>
-        <div className="modes" role="radiogroup" aria-label="Video mode">
-          {MODES.map((m) => (
-            <button key={m.id} type="button" role="radio" aria-checked={mode === m.id} title={m.hint} onClick={() => chooseMode(m.id)}>
-              {m.label}
+    <Shell current="camera" onLogout={onLogout} live={live}>
+      <div className="monitor">
+        <header className="bar">
+          <div className="who">
+            <h1 className="sr-only">Camera</h1>
+            <span className="state" role="status">
+              {statusText}
+            </span>
+          </div>
+          <div className="modes" role="radiogroup" aria-label="Video mode">
+            {MODES.map((m) => (
+              <button key={m.id} type="button" role="radio" aria-checked={mode === m.id} title={m.hint} onClick={() => chooseMode(m.id)}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <div className="bar-actions">
+            <button type="button" className="quiet" onClick={() => void reset()} disabled={resetting} title="Drop the buffered picture and reconnect to the camera">
+              {resetting ? "Resetting…" : "Reset stream"}
             </button>
-          ))}
-        </div>
-        <div className="bar-actions">
-          <button type="button" className="quiet" onClick={() => void reset()} disabled={resetting} title="Drop the buffered picture and reconnect to the camera">
-            {resetting ? "Resetting…" : "Reset stream"}
-          </button>
-          <button type="button" className="quiet" onClick={() => setManagingCameras(true)}>
-            Cameras
-          </button>
-          <button type="button" className="quiet" onClick={() => setEditingZones(true)}>
-            Zones
-          </button>
-          <button type="button" className="quiet" onClick={onLogout}>
-            Sign out
-          </button>
-        </div>
-      </header>
+            <button type="button" className="quiet" onClick={() => setManagingCameras(true)}>
+              Cameras
+            </button>
+            <button type="button" className="quiet" onClick={() => setEditingZones(true)}>
+              Zones
+            </button>
+          </div>
+        </header>
 
-      <main className="stage">
-        <section className="viewport" aria-label="Camera view">
-          {!resetting && <Player mode={mode} attempt={attempt} onState={setPlayer} onAuthError={onLogout} />}
-          <PrivacyOverlay zones={zones} />
-          {resetting && (
-            <div className="overlay solid" role="status">
-              <p className="headline">Resetting the stream…</p>
-              <p>Letting go of the camera and connecting again. This takes a few seconds.</p>
-            </div>
-          )}
-          {live && !resetting && motion?.unstable && (
-            <div className="overlay solid" role="status">
-              <p className="headline">Reconnecting to the camera…</p>
-              <p>The picture can be damaged for a few seconds. It comes back by itself.</p>
-            </div>
-          )}
-          {!live && !resetting && (
-            <div className="overlay">
-              {player.status === "error" ? (
-                <>
-                  <p className="headline">The stream didn't start.</p>
-                  <p>{player.message}</p>
-                  <div className="actions">
-                    <button type="button" onClick={() => setAttempt((n) => n + 1)}>
-                      Try again
-                    </button>
-                    {mode !== "frames" && (
-                      <button type="button" onClick={() => chooseMode("frames")}>
-                        Switch to Frames
+        <main className="stage">
+          <section className="viewport" aria-label="Camera view">
+            {!resetting && <Player mode={mode} attempt={attempt} onState={setPlayer} onAuthError={onLogout} />}
+            <PrivacyOverlay zones={zones} />
+            {resetting && (
+              <div className="overlay solid" role="status">
+                <p className="headline">Resetting the stream…</p>
+                <p>Letting go of the camera and connecting again. This takes a few seconds.</p>
+              </div>
+            )}
+            {live && !resetting && motion?.unstable && (
+              <div className="overlay solid" role="status">
+                <p className="headline">Reconnecting to the camera…</p>
+                <p>The picture can be damaged for a few seconds. It comes back by itself.</p>
+              </div>
+            )}
+            {!live && !resetting && (
+              <div className="overlay">
+                {player.status === "error" ? (
+                  <>
+                    <p className="headline">The stream didn't start.</p>
+                    <p>{player.message}</p>
+                    <div className="actions">
+                      <button type="button" onClick={() => setAttempt((n) => n + 1)}>
+                        Try again
                       </button>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <p>Connecting to the camera…</p>
-              )}
-            </div>
-          )}
-        </section>
+                      {mode !== "frames" && (
+                        <button type="button" onClick={() => chooseMode("frames")}>
+                          Switch to Frames
+                        </button>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p>Connecting to the camera…</p>
+                )}
+              </div>
+            )}
+          </section>
 
-        <aside className="rail">
-          <JogDial angle={angle} onMove={handleMove} onCapture={capture} capturing={capturing} />
-          <p className="hint">Hold a side to keep moving. Arrow keys move the camera and C captures.</p>
-          <Lights onAuthError={onLogout} onError={fail} />
-          <Vacuum onAuthError={onLogout} onError={fail} />
-        </aside>
+          <aside className="rail">
+            <JogDial angle={angle} onMove={handleMove} onCapture={capture} capturing={capturing} />
+            <p className="hint">Hold a side to keep moving. Arrow keys move the camera and C captures.</p>
+          </aside>
 
-        <section className="sheet clips" aria-labelledby="clips-title">
-          <h2 id="clips-title">Motion clips</h2>
-          <Clips clips={clips} motion={motion} zones={zones} onChanged={refreshClips} onError={fail} />
-        </section>
+          <section className="sheet clips" aria-labelledby="clips-title">
+            <h2 id="clips-title">Motion clips</h2>
+            <Clips clips={clips} motion={motion} zones={zones} onChanged={refreshClips} onError={fail} />
+          </section>
 
-        <section className="sheet system" aria-labelledby="system-title">
-          <h2 id="system-title">System</h2>
-          <SystemPanel onAuthError={onLogout} />
-        </section>
+          <section className="sheet system" aria-labelledby="system-title">
+            <h2 id="system-title">System</h2>
+            <SystemPanel onAuthError={onLogout} />
+          </section>
 
-        <section className="sheet snapshots" aria-labelledby="sheet-title">
-          <h2 id="sheet-title">Snapshots</h2>
-          <Gallery items={snapshots} zones={zones} />
-        </section>
-      </main>
+          <section className="sheet snapshots" aria-labelledby="sheet-title">
+            <h2 id="sheet-title">Snapshots</h2>
+            <Gallery items={snapshots} zones={zones} />
+          </section>
+        </main>
 
-      {editingZones && (
-        <ZoneEditor
-          onClose={() => setEditingZones(false)}
-          onSaved={(saved) => {
-            setZones(saved);
-            say("Zones saved");
-          }}
-          onAuthError={onLogout}
-          onError={fail}
-        />
-      )}
-      {managingCameras && <Cameras onClose={() => setManagingCameras(false)} onAuthError={onLogout} />}
+        {editingZones && (
+          <ZoneEditor
+            onClose={() => setEditingZones(false)}
+            onSaved={(saved) => {
+              setZones(saved);
+              say("Zones saved");
+            }}
+            onAuthError={onLogout}
+            onError={fail}
+          />
+        )}
+        {managingCameras && <Cameras onClose={() => setManagingCameras(false)} onAuthError={onLogout} />}
 
-      <div className="toast" role="status" aria-live="polite">
-        {toast}
+        <div className="toast" role="status" aria-live="polite">
+          {toast}
+        </div>
       </div>
-    </div>
+    </Shell>
   );
 }
 
@@ -319,7 +315,14 @@ export function App() {
     clearToken();
     setAuthed(false);
   }, []);
-  const hash = useHash();
+  const route = useRoute();
   if (!authed) return <Login onDone={() => setAuthed(true)} />;
-  return hash === "#/vacuum" ? <VacuumPage onLogout={logout} /> : <Monitor onLogout={logout} />;
+  switch (route) {
+    case "vacuum":
+      return <VacuumPage onLogout={logout} />;
+    case "lights":
+      return <LightsPage onLogout={logout} />;
+    default:
+      return <Monitor onLogout={logout} />;
+  }
 }

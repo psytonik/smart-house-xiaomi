@@ -89,6 +89,14 @@ describe("backend", () => {
     rmSync(dataDir, { recursive: true, force: true });
   });
 
+  it("serves the app on the vacuum and lights pages", async () => {
+    for (const url of ["/vacuum", "/lights"]) {
+      const res = await app.inject({ method: "GET", url });
+      assert.equal(res.statusCode, 200);
+      assert.match(res.body, /<title>cam<\/title>/);
+    }
+  });
+
   it("health is public", async () => {
     const res = await app.inject("/health");
     assert.equal(res.statusCode, 200);

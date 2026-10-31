@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AuthError, fetchVacuumMap, getVacuumCare, getVacuumHistory, refreshVacuumMap, type CleaningMode, type CleaningRecord, type SuctionLevel, type WaterLevel, type PartWear, type VacuumCare } from "../api";
+import { Shell } from "./Shell";
 import { useLivePosition } from "../useLivePosition";
 import { useVacuum } from "../useVacuum";
 import { CLEANING_MODE_LABEL, MODE_LABEL, SUCTION_LABEL, WATER_LABEL, mainAction } from "./vacuumText";
@@ -7,7 +8,7 @@ import { CLEANING_MODE_LABEL, MODE_LABEL, SUCTION_LABEL, WATER_LABEL, mainAction
 const RADIUS = 100;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-/** A page of its own for the robot vacuum, reached at #/vacuum. */
+/** A page of its own for the robot vacuum, reached at /vacuum. */
 export function VacuumPage({ onLogout }: { onLogout: () => void }) {
   const [toast, setToast] = useState("");
   const timer = useRef<number>(0);
@@ -32,17 +33,11 @@ export function VacuumPage({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   return (
-    <div className="vpage">
-      <header className="vpage-bar">
-        <a className="vpage-back" href="#/">
-          Back to the camera
-        </a>
-        <h1 ref={heading} tabIndex={-1}>
+    <Shell current="vacuum" onLogout={onLogout}>
+      <main className="vpage-main">
+        <h1 className="page-title" ref={heading} tabIndex={-1}>
           Vacuum
         </h1>
-      </header>
-
-      <main className="vpage-main">
         {!state && <p className="hint">Connecting to the vacuum…</p>}
 
         {state && !state.configured && (
@@ -69,7 +64,7 @@ export function VacuumPage({ onLogout }: { onLogout: () => void }) {
       <div className="toast" role="status" aria-live="polite">
         {toast}
       </div>
-    </div>
+    </Shell>
   );
 }
 
