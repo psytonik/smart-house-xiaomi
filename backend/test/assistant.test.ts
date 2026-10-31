@@ -220,6 +220,12 @@ describe("quick commands (rules, no model)", () => {
     assert.deepEqual(one("пылесос потише"), [["vacuum_suction", "quiet"]]);
     assert.deepEqual(one("пылесос на полную мощность"), [["vacuum_suction", "turbo"]]);
     assert.deepEqual(one("пылесос больше воды"), [["vacuum_water", "high"]]);
+    assert.deepEqual(one("Вода высоко."), [["vacuum_water", "high"]]);
+    assert.deepEqual(one("вода низко"), [["vacuum_water", "low"]]);
+    assert.deepEqual(one("вода средняя"), [["vacuum_water", "medium"]]);
+    assert.deepEqual(one("мощность максимум"), [["vacuum_suction", "turbo"]]);
+    assert.deepEqual(one("мощность тихо"), [["vacuum_suction", "quiet"]]);
+    assert.equal(planQuick(plain("сделай потише")) ?.[0]?.tool, "tv_key"); // volume, not suction
   });
 
   it("splits several commands in one phrase", () => {

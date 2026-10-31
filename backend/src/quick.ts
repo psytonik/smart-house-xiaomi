@@ -34,6 +34,26 @@ const WORDS = {
   camera: /(камер)/,
 };
 
+/** Water level in the phrase: «вода высоко», «больше воды», «средняя вода». Null when the phrase is not about water. */
+function waterLevel(t: string): "low" | "medium" | "high" | null {
+  if (!has(t, /(вод[аыуе]|влажност)/)) return null;
+  if (has(t, /(больше|побольше|много|высок|сильн|максимум|максимальн|полн)/)) return "high";
+  if (has(t, /(меньше|поменьше|мало|низк|слаб|минимум|минимальн)/)) return "low";
+  if (has(t, /(средн|нормальн|обычн)/)) return "medium";
+  return null;
+}
+
+/** Suction in the phrase: «мощность максимум», «потише», «турбо». Null when it is not about suction. */
+function suctionLevel(t: string, needsPowerWord: boolean): "quiet" | "standard" | "strong" | "turbo" | null {
+  const about = has(t, /(мощност|всасыван)/);
+  if (needsPowerWord && !about) return null;
+  if (has(t, /(тих|тише|потише|quiet)/)) return "quiet";
+  if (has(t, /(турбо|максимальн|максимум|на полную)/)) return "turbo";
+  if (has(t, /(сильн|мощн|высок)/)) return "strong";
+  if (has(t, /(стандарт|обычн|средн|нормальн)/) && about) return "standard";
+  return null;
+}
+
 /** One short command (no "and") to the steps it means, or null if it is not one the rules know. */
 function planOne(part: string): Step[] | null {
   const t = part.trim();
@@ -56,6 +76,14 @@ function planOne(part: string): Step[] | null {
     return [{ tool: "vacuum_action", input: { action: "empty" }, say: "Опустошаю бак пылесоса" }];
   }
 
+  // --- vacuum: water and suction named on their own ("вода высоко", "мощность максимум"), with no word «пылесос» ---
+  if (!has(t, WORDS.light) && !has(t, WORDS.tv) && !has(t, WORDS.vacuum)) {
+    const water = waterLevel(t);
+    if (water) return [{ tool: "vacuum_water", input: { level: water }, say: "Поменял количество воды" }];
+    const suction = suctionLevel(t, true);
+    if (suction) return [{ tool: "vacuum_suction", input: { level: suction }, say: "Поменял мощность пылесоса" }];
+  }
+
   // --- vacuum ---
   if (has(t, WORDS.vacuum) || (has(t, /(пропылесос|убери|помой пол|подмети)/) && !has(t, /(звук|громкост)/))) {
     if (has(t, /(найди|где|подай голос|позови)/)) return [{ tool: "vacuum_action", input: { action: "find" }, say: "Пылесос подаёт голос" }];
@@ -72,9 +100,9 @@ function planOne(part: string): Step[] | null {
       if (start) steps.push({ tool: "vacuum_clean", input: { text: t }, say: "Пылесос начал уборку" });
       return steps;
     }
-    const suction = has(t, /(тих|тише|потише|quiet)/) ? "quiet" : has(t, /(турбо|максимальн|на полную|на максимум)/) ? "turbo" : has(t, /(сильн|мощн)/) ? "strong" : has(t, /(стандарт|обычн|средн)/) && has(t, /(мощност|всасыван|режим)/) ? "standard" : null;
+    const suction = suctionLevel(t, false);
     if (suction && !start) return [{ tool: "vacuum_suction", input: { level: suction }, say: "Поменял мощность пылесоса" }];
-    const water = has(t, /вод|влажност/) ? (has(t, /(больше|побольше|много|высок|сильн|максимум)/) ? "high" : has(t, /(меньше|поменьше|мало|низк|слаб|минимум)/) ? "low" : has(t, /средн/) ? "medium" : null) : null;
+    const water = waterLevel(t);
     if (water) return [{ tool: "vacuum_water", input: { level: water }, say: "Поменял количество воды" }];
     if (has(t, /(запусти|включи|начни|начать|поехали|убери|пропылесось|пылесось|поезжай|продолжи|подмети|помой)/)) return [{ tool: "vacuum_clean", input: { text: t }, say: "Пылесос начал уборку" }];
     return null;
