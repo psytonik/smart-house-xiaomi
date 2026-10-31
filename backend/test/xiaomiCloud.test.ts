@@ -59,6 +59,29 @@ describe("Xiaomi cloud client", () => {
     assert.equal(loadSession(dir)?.region, "de");
   });
 
+  it("tries the next region when a region gives a link that leads nowhere, and keeps the one that worked", async () => {
+    // any region answers with a link, also for a file it doesn't have: the link of the wrong one is a 404
+    const wrongFirst = await startFakeCloud(session, { "1/2/9": '{"hello":"map"}' }, {}, [], { brokenLinks: 1 });
+    try {
+      saveSession(dir, { ...session, region: "cn" });
+      assert.equal(await downloadCloudFile(dir, "1/2/9", { XIAOMI_CLOUD_BASE: wrongFirst.base }), '{"hello":"map"}');
+      assert.equal(loadSession(dir)?.region, "de", "cn gave a dead link, de was next in line and worked");
+    } finally {
+      await wrongFirst.close();
+    }
+  });
+
+  it("does not remember a region whose download failed", async () => {
+    const allDead = await startFakeCloud(session, { "1/2/9": "x" }, {}, [], { brokenLinks: 99 });
+    try {
+      saveSession(dir, { ...session, region: "cn" });
+      await assert.rejects(downloadCloudFile(dir, "1/2/9", { XIAOMI_CLOUD_BASE: allDead.base }), /download failed \(HTTP 404\)/);
+      assert.equal(loadSession(dir)?.region, "cn", "a region that only gave dead links must not replace the saved one");
+    } finally {
+      await allDead.close();
+    }
+  });
+
   it("says so when the cloud rejects the session or does not know the file", async () => {
     saveSession(dir, { ...session, ssecurity: Buffer.alloc(16, 9).toString("base64") });
     await assert.rejects(downloadCloudFile(dir, "1/2/9", env), (e: unknown) => e instanceof CloudError && e.needsLogin);

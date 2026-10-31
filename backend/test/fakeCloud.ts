@@ -29,8 +29,9 @@ export function cloudMapFile(opts: { width: number; height: number; cells: numbe
  * A pretend Xiaomi cloud on a loopback port. It checks the signature and the cookie the way the real one does,
  * answers file-url requests for the object names in `files`, and serves those files.
  */
-export function startFakeCloud(session: CloudSession, files: Record<string, string>, rows: Record<string, Array<{ time: number; value: string }>> = {}, devices: Array<Record<string, unknown>> = []): Promise<{ base: string; calls: string[]; close: () => Promise<void> }> {
+export function startFakeCloud(session: CloudSession, files: Record<string, string>, rows: Record<string, Array<{ time: number; value: string }>> = {}, devices: Array<Record<string, unknown>> = [], options: { brokenLinks?: number } = {}): Promise<{ base: string; calls: string[]; close: () => Promise<void> }> {
   const calls: string[] = [];
+  let brokenLinks = options.brokenLinks ?? 0; // the first N download links lead nowhere, like a link from the wrong region
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
     req.on("data", (c) => chunks.push(c));
@@ -68,7 +69,7 @@ export function startFakeCloud(session: CloudSession, files: Record<string, stri
         return void res.end(rc4(key, Buffer.from(JSON.stringify(reply))).toString("base64"));
       }
       const answer = apiPath.includes("get_interim_file_url") && files[request.obj_name] !== undefined
-        ? { code: 0, result: { url: `${origin}/files/${encodeURIComponent(request.obj_name)}` } }
+        ? { code: 0, result: { url: `${origin}/files/${brokenLinks-- > 0 ? "nowhere" : encodeURIComponent(request.obj_name)}` } }
         : { code: -1, message: "no such file" };
       res.end(rc4(key, Buffer.from(JSON.stringify(answer))).toString("base64"));
     });

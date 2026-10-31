@@ -12,6 +12,9 @@ export class CloudError extends Error {
   }
 }
 
+/** The cloud gave a link but the file is not there (or the server refused it): worth trying another region. */
+class DownloadFailed extends CloudError {}
+
 /** The keys of one Xiaomi sign-in. Lives in backend/data/xiaomi-session.json (mode 600) and never leaves this machine. */
 export type CloudSession = { serviceToken: string; ssecurity: string; userId: string; clientId: string; region?: string };
 
@@ -145,6 +148,7 @@ export async function downloadCloudBytes(dataDir: string, objectName: string, en
   if (!session) throw new CloudError("not signed in to Xiaomi yet: run tools/xiaomi-cloud.ts login", true);
 
   const giveUpAt = Date.now() + OVERALL_LIMIT_MS;
+  let lastFailure: DownloadFailed | undefined;
   const regions = session.region ? [session.region, ...REGIONS.filter((r) => r !== session.region)] : REGIONS;
   for (const region of regions) {
     for (const apiPath of ["v2/home/get_interim_file_url_pro", "v2/home/get_interim_file_url", "home/getfileurl_v3", "home/getfileurl"]) {
@@ -159,10 +163,20 @@ export async function downloadCloudBytes(dataDir: string, objectName: string, en
       if (typeof url !== "string") continue;
       // the real cloud hands out https links; plain http is accepted only for the loopback test cloud
       if (!isFollowable(url, apiBase(region, env))) throw new CloudError("the cloud gave a download link I won't follow");
-      if (session.region !== region) saveSession(dataDir, { ...session, region });
-      return fetchBytes(url);
+      // Every region hands out a link, also for a file it doesn't have: the link of the wrong one is a 404. So the region is
+      // only remembered once the download worked, and a dead link means "try the next region", not "give up".
+      try {
+        const bytes = await fetchBytes(url);
+        if (session.region !== region) saveSession(dataDir, { ...session, region });
+        return bytes;
+      } catch (e) {
+        if (!(e instanceof DownloadFailed)) throw e;
+        lastFailure = e;
+        break; // the other paths of this region would give the same link
+      }
     }
   }
+  if (lastFailure) throw lastFailure;
   throw new CloudError("the cloud did not give a download link: the Xiaomi session may have expired, run tools/xiaomi-cloud.ts login again", true);
 }
 
@@ -173,7 +187,7 @@ async function fetchBytes(url: string): Promise<Buffer> {
   } catch {
     throw new CloudError("could not download the map file from the Xiaomi cloud");
   }
-  if (!res.ok) throw new CloudError(`the map download failed (HTTP ${res.status})`);
+  if (!res.ok) throw new DownloadFailed(`the map download failed (HTTP ${res.status})`);
   const declared = Number(res.headers.get("content-length") ?? 0);
   if (declared > MAX_FILE_BYTES) throw new CloudError("the map file is too big to be a map");
   const body = Buffer.from(await res.arrayBuffer());
