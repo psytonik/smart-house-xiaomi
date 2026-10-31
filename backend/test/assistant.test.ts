@@ -265,6 +265,12 @@ describe("quick commands (rules, no model)", () => {
     assert.equal(out.reply, ASK_VACUUM);
   });
 
+  it("refreshes the map", () => {
+    assert.deepEqual(planQuick(plain("Обнови карту."))?.map((x) => x.tool), ["vacuum_map_refresh"]);
+    assert.deepEqual(planQuick(plain("обнови карту пылесоса"))?.map((x) => x.tool), ["vacuum_map_refresh"]);
+    assert.equal(planQuick(plain("покажи карту")), null);
+  });
+
   it("splits several commands in one phrase", () => {
     assert.deepEqual(plan("включи свет и запусти пылесос"), [["lights_set", true], ["vacuum_clean", undefined]]);
   });

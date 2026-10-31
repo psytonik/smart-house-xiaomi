@@ -86,6 +86,11 @@ function planOne(part: string): Step[] | null {
     return null;
   }
 
+  // --- vacuum: redraw the floor plan from the robot's own map ---
+  if (has(t, /карт/) && has(t, /(обнови|обновить|обновление|перерисуй|перезагрузи|загрузи|свежую|свежая|refresh|update)/) && !has(t, WORDS.light) && !has(t, WORDS.tv)) {
+    return [{ tool: "vacuum_map_refresh", input: {}, say: "Обновляю карту пылесоса" }];
+  }
+
   // --- vacuum: empty the bin. The microphone hears "очисти бак" as "очись баг", "очисть бэк" and the like, so the sound is matched loosely.
   if (has(t, /(очис|очист|опустош|опорожн|вытряхн|выгрузи|разгрузи)/) && has(t, /(бак|бач|баг|бэк|бег|бук|back|мусор|пыл)/) && !has(t, WORDS.light)) {
     return [{ tool: "vacuum_action", input: { action: "empty" }, say: "Опустошаю бак пылесоса" }];

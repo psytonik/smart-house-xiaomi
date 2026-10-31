@@ -96,6 +96,11 @@ export const TOOLS: Anthropic.Tool[] = [
     input_schema: object({ level: { type: "string", enum: WATER_NAMES } }, ["level"]),
   },
   {
+    name: "vacuum_map_refresh",
+    description: "Обновить карту пылесоса: заново взять свежую карту у робота и перерисовать план.",
+    input_schema: object({}),
+  },
+  {
     name: "vacuum_rooms",
     description: "Комнаты, сохранённые на карте пылесоса, с их номерами.",
     input_schema: object({}),
@@ -178,6 +183,8 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
       return call("POST", "/api/vacuum/suction", { level: input.level });
     case "vacuum_water":
       return call("POST", "/api/vacuum/water", { level: input.level });
+    case "vacuum_map_refresh":
+      return call("POST", "/api/vacuum/map/refresh");
     case "vacuum_rooms":
       return call("GET", "/api/vacuum/rooms");
     case "vacuum_clean_rooms": {
@@ -264,7 +271,7 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
 }
 
 /** Tools that change something; the others only look, and are not worth remembering. */
-const DOES = new Set(["camera_move", "lights_set", "vacuum_action", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
+const DOES = new Set(["camera_move", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
 
 /** Understands one spoken phrase (with the recent turns for context) and does it. */
 export async function runAssistant(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[]; memory?: AssistantMemory }): Promise<AssistantReply> {
