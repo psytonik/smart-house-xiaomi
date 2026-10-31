@@ -210,6 +210,18 @@ describe("quick commands (rules, no model)", () => {
     assert.equal(planQuick(plain("очисти свет")), null);
   });
 
+  it("sets the cleaning mode, power and water", () => {
+    const one = (t: string) => planQuick(plain(t))?.map((x) => [x.tool, x.input.mode ?? x.input.level]);
+    assert.deepEqual(one("Очисти бачок пылесоса"), [["vacuum_action", undefined]]);
+    assert.deepEqual(one("Поменяй в пылесосе на мокрую уборку"), [["vacuum_mode", "mopping"]]);
+    assert.deepEqual(one("пылесос сухая и мокрая уборка"), [["vacuum_mode", "both"]]);
+    assert.deepEqual(one("пылесос только сухая уборка"), [["vacuum_mode", "sweeping"]]);
+    assert.deepEqual(one("запусти мокрую уборку"), [["vacuum_mode", "mopping"], ["vacuum_clean", undefined]]);
+    assert.deepEqual(one("пылесос потише"), [["vacuum_suction", "quiet"]]);
+    assert.deepEqual(one("пылесос на полную мощность"), [["vacuum_suction", "turbo"]]);
+    assert.deepEqual(one("пылесос больше воды"), [["vacuum_water", "high"]]);
+  });
+
   it("splits several commands in one phrase", () => {
     assert.deepEqual(plan("включи свет и запусти пылесос"), [["lights_set", true], ["vacuum_clean", undefined]]);
   });

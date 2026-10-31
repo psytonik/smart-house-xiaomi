@@ -52,7 +52,7 @@ function planOne(part: string): Step[] | null {
   }
 
   // --- vacuum: empty the bin. The microphone hears "очисти бак" as "очись баг", "очисть бэк" and the like, so the sound is matched loosely.
-  if (has(t, /(очис|очист|опустош|опорожн|вытряхн|выгрузи|разгрузи)/) && has(t, /(бак|баг|бэк|бег|бук|back|мусор|пыл)/) && !has(t, WORDS.light)) {
+  if (has(t, /(очис|очист|опустош|опорожн|вытряхн|выгрузи|разгрузи)/) && has(t, /(бак|бач|баг|бэк|бег|бук|back|мусор|пыл)/) && !has(t, WORDS.light)) {
     return [{ tool: "vacuum_action", input: { action: "empty" }, say: "Опустошаю бак пылесоса" }];
   }
 
@@ -63,6 +63,19 @@ function planOne(part: string): Step[] | null {
     if (has(t, /(домой|на базу|на станцию|на зарядку|заряжаться|вернись)/)) return [{ tool: "vacuum_action", input: { action: "dock" }, say: "Пылесос едет на базу" }];
     if (has(t, /(пауза|паузу|приостанов)/)) return [{ tool: "vacuum_action", input: { action: "pause" }, say: "Пауза" }];
     if (has(t, /(останов|прекрати|стоп|хватит|заверши|отмени)/)) return [{ tool: "vacuum_action", input: { action: "stop" }, say: "Уборка остановлена" }];
+    // What kind of cleaning, how hard, how wet. "Мокрая уборка" sets the mode; with "запусти" it also starts.
+    const start = has(t, /(запусти|начни|начать|поехали|поезжай)/);
+    const mode = has(t, /(сух\S* и (мокр|влажн)|(мокр|влажн)\S* и сух|и то и другое|обе|оба|вместе|смешан)/) ? "both" : has(t, /(мокр|протир|швабр|влажн)/) ? "mopping" : has(t, /(сух|только пылесос|только подмет|без воды|подметани)/) ? "sweeping" : null;
+    const modeWords = { both: "сухую и мокрую уборку", mopping: "мокрую уборку", sweeping: "сухую уборку" } as const;
+    if (mode) {
+      const steps: Step[] = [{ tool: "vacuum_mode", input: { mode }, say: `Включил ${modeWords[mode]}` }];
+      if (start) steps.push({ tool: "vacuum_clean", input: { text: t }, say: "Пылесос начал уборку" });
+      return steps;
+    }
+    const suction = has(t, /(тих|тише|потише|quiet)/) ? "quiet" : has(t, /(турбо|максимальн|на полную|на максимум)/) ? "turbo" : has(t, /(сильн|мощн)/) ? "strong" : has(t, /(стандарт|обычн|средн)/) && has(t, /(мощност|всасыван|режим)/) ? "standard" : null;
+    if (suction && !start) return [{ tool: "vacuum_suction", input: { level: suction }, say: "Поменял мощность пылесоса" }];
+    const water = has(t, /вод|влажност/) ? (has(t, /(больше|побольше|много|высок|сильн|максимум)/) ? "high" : has(t, /(меньше|поменьше|мало|низк|слаб|минимум)/) ? "low" : has(t, /средн/) ? "medium" : null) : null;
+    if (water) return [{ tool: "vacuum_water", input: { level: water }, say: "Поменял количество воды" }];
     if (has(t, /(запусти|включи|начни|начать|поехали|убери|пропылесось|пылесось|поезжай|продолжи|подмети|помой)/)) return [{ tool: "vacuum_clean", input: { text: t }, say: "Пылесос начал уборку" }];
     return null;
   }
@@ -117,7 +130,9 @@ function planOne(part: string): Step[] | null {
 
 /** The whole phrase (several commands may be joined by "и", a comma or "потом") to steps, or null if any part is unknown. */
 export function planQuick(text: string): Step[] | null {
-  const parts = text.split(/\s+и\s+|\s*,\s*|\s+потом\s+|\s+затем\s+|\s+а потом\s+/).filter((p) => p.trim());
+  // "сухая и мокрая" is one mode, not two commands
+  const joined = text.replace(/(сух\S*\s+и\s+(мокр|влажн)\S*|(мокр|влажн)\S*\s+и\s+сух\S*)/g, "смешанная");
+  const parts = joined.split(/\s+и\s+|\s*,\s*|\s+потом\s+|\s+затем\s+|\s+а потом\s+/).filter((p) => p.trim());
   if (parts.length === 0 || parts.length > 4) return null;
   const steps: Step[] = [];
   for (const part of parts) {

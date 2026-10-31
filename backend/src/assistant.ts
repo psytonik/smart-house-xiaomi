@@ -3,7 +3,7 @@ import { PTZ_OPERATIONS } from "./go2rtc.js";
 import type { AssistantMemory } from "./assistantMemory.js";
 import { planQuick, type Step } from "./quick.js";
 import { APP_IDS, KEY_NAMES } from "./tv/messages.js";
-import { VACUUM_ACTIONS } from "./vacuum.js";
+import { CLEANING_MODE_NAMES, SUCTION_NAMES, VACUUM_ACTIONS, WATER_NAMES } from "./vacuum.js";
 
 /** How the assistant reaches the house: the app's own HTTP API, so every route's checks apply to it too. */
 export type ApiCall = (method: "GET" | "POST", url: string, body?: object) => Promise<{ status: number; body: unknown }>;
@@ -79,6 +79,21 @@ export const TOOLS: Anthropic.Tool[] = [
     name: "vacuum_action",
     description: "Команда пылесосу: start (начать уборку), pause, stop (закончить), dock (домой на базу), find (подать голос), empty (опустошить бак на базе).",
     input_schema: object({ action: { type: "string", enum: VACUUM_ACTIONS } }, ["action"]),
+  },
+  {
+    name: "vacuum_mode",
+    description: "Режим уборки пылесоса: sweeping (сухая), mopping (мокрая, швабра), both (сухая и мокрая). Только переключает режим, уборку не запускает.",
+    input_schema: object({ mode: { type: "string", enum: CLEANING_MODE_NAMES } }, ["mode"]),
+  },
+  {
+    name: "vacuum_suction",
+    description: "Мощность всасывания пылесоса: quiet (тихо), standard, strong, turbo.",
+    input_schema: object({ level: { type: "string", enum: SUCTION_NAMES } }, ["level"]),
+  },
+  {
+    name: "vacuum_water",
+    description: "Сколько воды подаёт пылесос при мокрой уборке: low, medium, high.",
+    input_schema: object({ level: { type: "string", enum: WATER_NAMES } }, ["level"]),
   },
   {
     name: "vacuum_rooms",
@@ -157,6 +172,12 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
       return call("GET", "/api/vacuum");
     case "vacuum_action":
       return call("POST", "/api/vacuum", { action: input.action });
+    case "vacuum_mode":
+      return call("POST", "/api/vacuum/mode", { mode: input.mode });
+    case "vacuum_suction":
+      return call("POST", "/api/vacuum/suction", { level: input.level });
+    case "vacuum_water":
+      return call("POST", "/api/vacuum/water", { level: input.level });
     case "vacuum_rooms":
       return call("GET", "/api/vacuum/rooms");
     case "vacuum_clean_rooms": {
@@ -241,7 +262,7 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
 }
 
 /** Tools that change something; the others only look, and are not worth remembering. */
-const DOES = new Set(["camera_move", "lights_set", "vacuum_action", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
+const DOES = new Set(["camera_move", "lights_set", "vacuum_action", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
 
 /** Understands one spoken phrase (with the recent turns for context) and does it. */
 export async function runAssistant(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[]; memory?: AssistantMemory }): Promise<AssistantReply> {
