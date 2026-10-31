@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { followLink, type Route } from "../route";
 import { Nav } from "./Nav";
+import { Voice } from "./Voice";
 
 /** The frame every page shares: brand, page tabs and sign out stay in the same place on every page. */
 export function Shell({ current, onLogout, live = false, children }: { current: Route; onLogout: () => void; live?: boolean; children: ReactNode }) {
@@ -17,6 +18,7 @@ export function Shell({ current, onLogout, live = false, children }: { current: 
         </button>
       </header>
       {children}
+      <Voice onAuthLost={onLogout} />
     </div>
   );
 }

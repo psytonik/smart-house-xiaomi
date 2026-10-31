@@ -1,0 +1,324 @@
+import Anthropic from "@anthropic-ai/sdk";
+import { PTZ_OPERATIONS } from "./go2rtc.js";
+import type { AssistantMemory } from "./assistantMemory.js";
+import { planQuick, type Step } from "./quick.js";
+import { APP_IDS, KEY_NAMES } from "./tv/messages.js";
+import { VACUUM_ACTIONS } from "./vacuum.js";
+
+/** How the assistant reaches the house: the app's own HTTP API, so every route's checks apply to it too. */
+export type ApiCall = (method: "GET" | "POST", url: string, body?: object) => Promise<{ status: number; body: unknown }>;
+
+/** The part of the SDK client the loop needs; tests pass a pretend one. */
+export interface Brain {
+  messages: { create(params: Anthropic.MessageCreateParamsNonStreaming): Promise<Anthropic.Message> };
+}
+
+export interface Turn {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface AssistantReply {
+  /** What to say out loud and show. */
+  reply: string;
+  /** The model understood this one and it worked: the person may ask to remember the phrase. */
+  learnable?: boolean;
+  /** What was done, for the screen (the tool names with their arguments). */
+  actions: Array<{ tool: string; input: unknown; ok: boolean }>;
+}
+
+const MAX_ROUNDS = 6;
+/** Stems of the verbs by which a reply claims something is being done or was done. */
+const CLAIMS_ACTION = /(включ|выключ|запуст|запуск|поверн|откр|переключ|начина|начал|останов|убира|убрал|сделал|делаю|постав|нажим|нажал|гашу|погас|потуш|увелич|уменьш|приглуш)/i;
+
+/** What the microphone gives ("Выключи свет.") reads differently to a small model than what people type; make it one plain form. */
+export const plain = (text: string) => text.trim().replace(/[.!?…]+$/u, "").toLowerCase();
+
+const SYSTEM = `Ты голосовой помощник умного дома: камера Xiaomi с поворотом, робот-пылесос, ленты света и телевизор TCL.
+Пользователь говорит по-русски, иногда по-английски (find the robot значит найти пылесос), всегда отвечай по-русски. Его фразу распознал микрофон, так что в ней бывают ошибки в словах: понимай по смыслу.
+Выполняй просьбу инструментами сразу, не переспрашивай, если можно сделать разумно: «включи свет» значит включить все ленты, «выключи звук» и «включи звук» это одно нажатие mute, «громче» и «тише» это кнопки громкости телевизора (две-три штуки), а яркость относится только к свету: «ярче», «темнее», «приглуши».
+Любая просьба про устройства, в том числе вопрос о состоянии, требует вызова инструмента: никогда не отвечай про устройства по памяти и не говори, что сделал, если не вызвал инструмент.
+Команда только запускает действие: говори «включил», «запустил», «начал уборку», а не «убрано» и не «готово», если дело ещё идёт.
+Отвечай одной-двумя короткими фразами простыми словами, без списков и разметки: ответ прочитают вслух.
+Если инструмент вернул ошибку, скажи об этом честно и коротко. Если просьба не про дом или инструмента для неё нет, так и скажи.
+Не придумывай, что сделал то, чего не делал.`;
+
+const object = (properties: Record<string, unknown>, required: string[] = []) => ({ type: "object" as const, additionalProperties: false, properties, required });
+
+/** What the assistant may do. Deliberately small: nothing that resets, pairs, deletes or changes settings. */
+export const TOOLS: Anthropic.Tool[] = [
+  {
+    name: "camera_move",
+    description: "Повернуть камеру. Один шаг это небольшой поворот; для «сильно» поставь до 5 шагов.",
+    input_schema: object({ direction: { type: "string", enum: Object.keys(PTZ_OPERATIONS) }, steps: { type: "integer", minimum: 1, maximum: 5 } }, ["direction"]),
+  },
+  {
+    name: "lights_list",
+    description: "Какие ленты света есть, их id, включены ли и какая яркость.",
+    input_schema: object({}),
+  },
+  {
+    name: "lights_set",
+    description: "Включить, выключить или настроить ленты света. Без id действует на все ленты сразу. Указывай только то, что меняется.",
+    input_schema: object(
+      {
+        id: { type: "string", description: "id из lights_list (wifi или ble); не указывай, если нужны все ленты" },
+        on: { type: "boolean" },
+        brightness: { type: "integer", minimum: 0, maximum: 100 },
+        hue: { type: "integer", minimum: 0, maximum: 360, description: "цвет: 0 красный, 120 зелёный, 240 синий" },
+        saturation: { type: "integer", minimum: 0, maximum: 100 },
+      },
+    ),
+  },
+  {
+    name: "vacuum_status",
+    description: "Состояние пылесоса: что делает, заряд, ошибки.",
+    input_schema: object({}),
+  },
+  {
+    name: "vacuum_action",
+    description: "Команда пылесосу: start (начать уборку), pause, stop (закончить), dock (домой на базу), find (подать голос), empty (опустошить бак на базе).",
+    input_schema: object({ action: { type: "string", enum: VACUUM_ACTIONS } }, ["action"]),
+  },
+  {
+    name: "vacuum_rooms",
+    description: "Комнаты, сохранённые на карте пылесоса, с их номерами.",
+    input_schema: object({}),
+  },
+  {
+    name: "vacuum_clean_rooms",
+    description: "Убрать только выбранные комнаты, по названиям (как их называет человек, например «кухня»). Пылесос должен стоять или быть на базе.",
+    input_schema: object({ rooms: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 16 } }, ["rooms"]),
+  },
+  {
+    name: "tv_key",
+    description: "Нажать кнопку пульта телевизора: громкость, питание, стрелки, ok, назад, домой, воспроизведение и так далее.",
+    input_schema: object({ key: { type: "string", enum: KEY_NAMES }, times: { type: "integer", minimum: 1, maximum: 10, description: "сколько раз нажать, например громкость" } }, ["key"]),
+  },
+  {
+    name: "tv_app",
+    description: "Открыть приложение на телевизоре.",
+    input_schema: object({ app: { type: "string", enum: APP_IDS } }, ["app"]),
+  },
+  {
+    name: "tv_sources",
+    description: "Какие источники сигнала у телевизора (HDMI 1, HDMI 2, AV, ТВ) и их id.",
+    input_schema: object({}),
+  },
+  {
+    name: "tv_source",
+    description: "Переключить телевизор на источник (id из tv_sources).",
+    input_schema: object({ source: { type: "string", pattern: "^[a-z0-9]{1,16}$" } }, ["source"]),
+  },
+];
+
+/** Same word up to its ending: «спальню» is «Спальня», «на кухне» is «Кухня». */
+function sameWord(a: string, b: string): boolean {
+  if (a === b) return true;
+  let n = 0;
+  while (n < a.length && n < b.length && a[n] === b[n]) n++;
+  return n >= Math.max(3, Math.min(a.length, b.length) - 2);
+}
+const matchesRoom = (said: string, name: string) => {
+  const n = name.toLowerCase();
+  return said === n || said.split(/\s+/).some((w) => n.split(/\s+/).some((x) => sameWord(w, x)));
+};
+
+/** Small models put 255 where 100 is the limit; keep the values inside what the lamps accept. */
+const clamp = (v: unknown, max: number) => Math.max(0, Math.min(max, Math.round(Number(v))));
+function tidyLight(patch: Record<string, unknown>): Record<string, unknown> {
+  const out = { ...patch };
+  if (out.brightness !== undefined) out.brightness = clamp(out.brightness, 100);
+  if (out.saturation !== undefined) out.saturation = clamp(out.saturation, 100);
+  if (out.hue !== undefined) out.hue = clamp(out.hue, 360);
+  return out;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** One tool call becomes one or more calls to the app's own API. */
+async function runTool(name: string, input: Record<string, unknown>, call: ApiCall): Promise<{ status: number; body: unknown }> {
+  switch (name) {
+    case "camera_move":
+      return call("POST", "/api/ptz", { direction: input.direction, ...(input.steps ? { steps: input.steps } : {}) });
+    case "lights_list":
+      return call("GET", "/api/lights");
+    case "lights_set": {
+      const { id, ...raw } = input;
+      const patch = tidyLight(raw);
+      if (id) return call("POST", `/api/lights/${encodeURIComponent(String(id))}`, patch);
+      const list = await call("GET", "/api/lights");
+      const ids = ((list.body as { lights?: Array<{ id: string }> }).lights ?? []).map((l) => l.id);
+      if (list.status >= 400 || ids.length === 0) return list.status >= 400 ? list : { status: 404, body: { error: "no lights are configured" } };
+      const results = await Promise.all(ids.map((lamp) => call("POST", `/api/lights/${encodeURIComponent(lamp)}`, patch)));
+      return results.find((r) => r.status >= 400) ?? results[0]!;
+    }
+    case "vacuum_status":
+      return call("GET", "/api/vacuum");
+    case "vacuum_action":
+      return call("POST", "/api/vacuum", { action: input.action });
+    case "vacuum_rooms":
+      return call("GET", "/api/vacuum/rooms");
+    case "vacuum_clean_rooms": {
+      // The model names rooms the way people do; the numbers are the robot's business.
+      const saved = await call("GET", "/api/vacuum/rooms");
+      if (saved.status >= 400) return saved;
+      const known = (saved.body as { rooms?: Array<{ id: number; name: string }> }).rooms ?? [];
+      const wanted = ((input.rooms as unknown[]) ?? []).map((r) => String(r).trim().toLowerCase());
+      const ids: number[] = [];
+      const missing: string[] = [];
+      for (const w of wanted) {
+        const hit = known.find((r) => r.name.toLowerCase() === w) ?? known.find((r) => matchesRoom(w, r.name));
+        if (hit) ids.push(hit.id);
+        else missing.push(w);
+      }
+      if (missing.length) return { status: 400, body: { error: `no such room: ${missing.join(", ")}`, rooms: known.map((r) => r.name) } };
+      return call("POST", "/api/vacuum/clean-rooms", { rooms: [...new Set(ids)] });
+    }
+    case "tv_key": {
+      const times = Math.min(Number(input.times ?? 1), 10);
+      let last = { status: 200, body: {} as unknown };
+      for (let i = 0; i < times; i++) {
+        if (i > 0) await sleep(150);
+        last = await call("POST", "/api/tv/key", { key: input.key });
+        if (last.status >= 400) break;
+      }
+      return last;
+    }
+    case "tv_app":
+      return call("POST", "/api/tv/app", { app: input.app });
+    case "tv_sources":
+      return call("GET", "/api/tv/sources");
+    case "tv_source":
+      return call("POST", "/api/tv/source", { source: input.source });
+    default:
+      return { status: 400, body: { error: `unknown tool ${name}` } };
+  }
+}
+
+/** Rooms named in the phrase (by the robot's saved map), or none. */
+async function roomsIn(text: string, call: ApiCall): Promise<string[]> {
+  const saved = await call("GET", "/api/vacuum/rooms");
+  if (saved.status >= 400) return [];
+  const known = (saved.body as { rooms?: Array<{ name: string }> }).rooms ?? [];
+  return known.filter((r) => matchesRoom(text, r.name)).map((r) => r.name);
+}
+
+/** Does the steps one after another and reports in words; stops at the first one that fails. */
+async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
+  const actions: AssistantReply["actions"] = [];
+  const said: string[] = [];
+  for (const step of steps) {
+    let tool = step.tool;
+    let input = step.input;
+    let say = step.say;
+    if (tool === "vacuum_clean") {
+      const rooms = await roomsIn(String(input.text), call);
+      if (rooms.length) {
+        tool = "vacuum_clean_rooms";
+        input = { rooms };
+        say = `Пылесос убирает: ${rooms.join(", ")}`;
+      } else {
+        tool = "vacuum_action";
+        input = { action: "start" };
+      }
+    }
+    let out: { status: number; body: unknown };
+    try {
+      out = await runTool(tool, input, call);
+    } catch (e) {
+      out = { status: 500, body: { error: e instanceof Error ? e.message : String(e) } };
+    }
+    const ok = out.status < 400;
+    actions.push({ tool, input, ok });
+    if (!ok) {
+      const why = (out.body as { error?: string } | null)?.error;
+      return { reply: `Не получилось: ${why ?? "устройство не ответило"}.`, actions };
+    }
+    said.push(say);
+  }
+  return { reply: said.join(". ") + ".", actions };
+}
+
+/** Tools that change something; the others only look, and are not worth remembering. */
+const DOES = new Set(["camera_move", "lights_set", "vacuum_action", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
+
+/** Understands one spoken phrase (with the recent turns for context) and does it. */
+export async function runAssistant(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[]; memory?: AssistantMemory }): Promise<AssistantReply> {
+  const phrase = plain(opts.text);
+  const { memory } = opts;
+  // What the household taught it, then the everyday rules: instant, free, and never "say it and not do it". The model is for the rest.
+  const taught = memory?.find(phrase);
+  const steps = taught ?? planQuick(phrase);
+  let via: "rules" | "learned" | "model" = taught ? "learned" : "rules";
+  let result: AssistantReply;
+  if (steps) result = await runSteps(steps, opts.call);
+  else {
+    via = "model";
+    result = await askModel(opts);
+    const done = result.actions.filter((a) => DOES.has(a.tool));
+    if (done.length > 0 && done.every((a) => a.ok)) {
+      memory?.offer(phrase, done.map((a) => ({ tool: a.tool, input: a.input as Record<string, unknown>, say: result.reply.replace(/[.!]+$/u, "") })));
+      result.learnable = true;
+    }
+  }
+  memory?.note({ text: opts.text, via, ok: result.actions.length > 0 && result.actions.every((a) => a.ok), reply: result.reply, actions: result.actions.map((a) => ({ tool: a.tool, ok: a.ok })) });
+  return result;
+}
+
+async function askModel(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[] }): Promise<AssistantReply> {
+  const { brain, model, call } = opts;
+  const messages: Anthropic.MessageParam[] = [...(opts.history ?? []).map((t): Anthropic.MessageParam => ({ role: t.role, content: t.content })), { role: "user", content: plain(opts.text) }];
+  const actions: AssistantReply["actions"] = [];
+  let nudged = false;
+
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const res = await brain.messages.create({
+      model,
+      max_tokens: 2000,
+      system: SYSTEM,
+      tools: TOOLS,
+      thinking: { type: "adaptive" },
+      output_config: { effort: "low" },
+      messages,
+    });
+
+    if (res.stop_reason === "refusal") return { reply: "Не могу с этим помочь.", actions };
+
+    const text = res.content
+      .filter((b): b is Anthropic.TextBlock => b.type === "text")
+      .map((b) => b.text)
+      .join(" ")
+      .trim();
+    const uses = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    if (res.stop_reason !== "tool_use" || uses.length === 0) {
+      // A small model sometimes answers in words without touching anything ("done", or a made-up status). Once, send it back to use a tool.
+      if (actions.length === 0 && !nudged) {
+        nudged = true;
+        messages.push({ role: "assistant", content: text }, { role: "user", content: "Ты не вызвал ни одного инструмента. Если просьба про дом, вызови нужный инструмент сейчас. Если для неё нет инструмента или она не про дом, коротко скажи об этом." });
+        continue;
+      }
+      // Said it, did nothing, and the nudge changed nothing: do not pass the empty promise on to the person.
+      if (actions.length === 0 && CLAIMS_ACTION.test(text)) return { reply: "Не получилось выполнить команду. Скажите ещё раз, чуть по-другому.", actions };
+      return { reply: text || "Готово.", actions };
+    }
+
+    // The assistant turn goes back whole (thinking blocks included); all results return in one user message.
+    messages.push({ role: "assistant", content: res.content });
+    const results: Anthropic.ToolResultBlockParam[] = [];
+    for (const use of uses) {
+      const input = (use.input ?? {}) as Record<string, unknown>;
+      let out: { status: number; body: unknown };
+      try {
+        out = await runTool(use.name, input, call);
+      } catch (e) {
+        out = { status: 500, body: { error: e instanceof Error ? e.message : String(e) } };
+      }
+      const ok = out.status < 400;
+      actions.push({ tool: use.name, input, ok });
+      results.push({ type: "tool_result", tool_use_id: use.id, content: JSON.stringify(out.body).slice(0, 6000), ...(ok ? {} : { is_error: true }) });
+    }
+    messages.push({ role: "user", content: results });
+  }
+  return { reply: "Не успел довести до конца, попробуйте сказать проще.", actions };
+}

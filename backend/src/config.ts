@@ -89,6 +89,8 @@ export interface Config {
   /** Lifetime of signed media links, in seconds. */
   signedUrlTtlSec: number;
   detect: DetectConfig;
+  /** Voice assistant. "ollama" is a free model on this computer; "anthropic" needs a key. */
+  assistant: { enabled: boolean; provider: "ollama" | "anthropic"; model: string; ollamaUrl: string };
   /** The oldest clips are removed beyond this size. */
   maxStorageBytes: number;
   /** At most one push notification per this many seconds; the rest become one summary. */
@@ -120,6 +122,17 @@ function defaultModelPath(): string {
   const dir = resolve(import.meta.dirname, "..", "models");
   const medium = resolve(dir, "yolox_m.onnx");
   return existsSync(medium) || !existsSync(resolve(dir, "yolox_tiny.onnx")) ? medium : resolve(dir, "yolox_tiny.onnx");
+}
+
+function assistantConfig(env: NodeJS.ProcessEnv): Config["assistant"] {
+  const provider = env.ASSISTANT_PROVIDER ?? (env.ANTHROPIC_API_KEY ? "anthropic" : "ollama");
+  if (provider !== "ollama" && provider !== "anthropic") throw new Error(`ASSISTANT_PROVIDER must be "ollama" or "anthropic" (got "${provider}")`);
+  return {
+    enabled: provider === "ollama" || Boolean(env.ANTHROPIC_API_KEY),
+    provider,
+    model: env.ASSISTANT_MODEL || (provider === "ollama" ? "qwen3:8b" : "claude-opus-5-5"),
+    ollamaUrl: (env.OLLAMA_URL ?? "http://127.0.0.1:11434").replace(/\/+$/, ""),
+  };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -160,6 +173,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       maxFrames: 5,
       discardEmpty: env.DETECT_DISCARD_EMPTY !== "false",
     },
+    assistant: assistantConfig(env),
     maxStorageBytes: num(env, "MAX_STORAGE_GB", 20, 0, undefined, true) * 1024 ** 3,
     pushMinIntervalSec: num(env, "PUSH_MIN_INTERVAL_SEC", 120, 0),
     pushUrl: env.EXPO_PUSH_URL ?? "https://exp.host/--/api/v2/push/send",

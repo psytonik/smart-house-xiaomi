@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import type { Config } from "./config.js";
 import { createContext } from "./context.js";
 import { HttpError } from "./go2rtc.js";
+import { assistantRoutes } from "./routes/assistant.js";
 import { camerasRoutes } from "./routes/cameras.js";
 import { eventsRoutes } from "./routes/events.js";
 import { lampRoutes } from "./routes/lamp.js";
@@ -36,7 +37,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}) {
 
   app.get("/health", async () => ({ ok: true }));
 
-  for (const routes of [statusRoutes, ptzRoutes, snapshotsRoutes, eventsRoutes, zonesRoutes, pushRoutes, camerasRoutes, lampRoutes, vacuumRoutes, tvRoutes, liveRoutes]) {
+  for (const routes of [assistantRoutes, statusRoutes, ptzRoutes, snapshotsRoutes, eventsRoutes, zonesRoutes, pushRoutes, camerasRoutes, lampRoutes, vacuumRoutes, tvRoutes, liveRoutes]) {
     routes(app, ctx);
   }
 

@@ -2217,3 +2217,92 @@ button:disabled {
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* ---------- voice assistant ---------- */
+.voice {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.voice-button {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--slate-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
+}
+.voice-button.on {
+  background: var(--signal);
+  border-color: var(--signal);
+  color: var(--ink);
+}
+.voice-panel {
+  width: min(340px, calc(100vw - 32px));
+  padding: 14px;
+  background: var(--slate);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.4);
+}
+.voice-panel p {
+  margin: 0 0 8px;
+}
+.voice-heard {
+  color: var(--muted);
+}
+.voice-reply {
+  color: var(--text);
+}
+.voice-note {
+  color: var(--muted);
+}
+.voice-error {
+  color: var(--signal);
+}
+.voice-type {
+  display: flex;
+  gap: 8px;
+}
+.voice-type input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.voice-settings {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.voice-settings label {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: 8px;
+}
+.voice-settings select {
+  min-width: 0;
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.voice-remember {
+  margin-bottom: 10px;
+}
