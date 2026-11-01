@@ -132,7 +132,7 @@ function piperConfig(env: NodeJS.ProcessEnv): PiperConfig | undefined {
   if (env.TTS_PIPER === "false") return undefined;
   const root = resolve(import.meta.dirname, "..", "..");
   const python = env.PIPER_PYTHON ?? resolve(root, "venv-piper", "bin", "python");
-  const model = env.PIPER_MODEL ?? resolve(import.meta.dirname, "..", "models", "piper", "ru_RU-irina-medium.onnx");
+  const model = env.PIPER_MODEL ?? resolve(import.meta.dirname, "..", "models", "piper", "ru_RU-denis-medium.onnx");
   if (!existsSync(python) || !existsSync(model)) return undefined;
   return { python, model, port: num(env, "PIPER_PORT", 5055, 1, 65535) };
 }

@@ -48,17 +48,17 @@ describe("Piper voice", () => {
 
   it("lists the voices on disk and refuses one that is not there", async () => {
     const dir = mkdtempSync(join(tmpdir(), "voices-"));
-    for (const v of ["ru_RU-irina-medium", "ru_RU-denis-medium"]) {
+    for (const v of ["ru_RU-denis-medium", "ru_RU-dmitri-medium"]) {
       writeFileSync(join(dir, `${v}.onnx`), "x");
       writeFileSync(join(dir, `${v}.onnx.json`), "{}");
     }
     writeFileSync(join(dir, "broken.onnx"), "x"); // no .json: not a usable voice
-    const tts = new PiperTts({ port: 0, url: piper.url, model: join(dir, "ru_RU-irina-medium.onnx") });
-    assert.deepEqual(tts.voices(), { default: "ru_RU-irina-medium", voices: ["ru_RU-irina-medium", "ru_RU-denis-medium"] });
+    const tts = new PiperTts({ port: 0, url: piper.url, model: join(dir, "ru_RU-denis-medium.onnx") });
+    assert.deepEqual(tts.voices(), { default: "ru_RU-denis-medium", voices: ["ru_RU-denis-medium", "ru_RU-dmitri-medium"] });
     await assert.rejects(tts.synthesize("x", 1, "../../etc/passwd"), /no such voice/);
+    await tts.synthesize("Привет", 1, "ru_RU-dmitri-medium");
+    assert.equal(piper.asked.at(-1)!.voice, "ru_RU-dmitri-medium");
     await tts.synthesize("Привет", 1, "ru_RU-denis-medium");
-    assert.equal(piper.asked.at(-1)!.voice, "ru_RU-denis-medium");
-    await tts.synthesize("Привет", 1, "ru_RU-irina-medium");
     assert.equal(piper.asked.at(-1)!.voice, undefined); // the main voice needs no name
     rmSync(dir, { recursive: true, force: true });
   });
