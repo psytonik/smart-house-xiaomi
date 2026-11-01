@@ -70,19 +70,36 @@ describe("Voice with Piper", () => {
     vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:x", revokeObjectURL: () => {} }));
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === "/api/tts" && init?.method === "POST") return new Response("RIFFfake", { status: 200 });
-      if (url === "/api/tts") return reply({ piper: true, default: "ru_RU-irina-medium", voices: ["ru_RU-irina-medium", "ru_RU-denis-medium"] });
+      if (url === "/api/tts") return reply({ piper: true, default: "ru_RU-denis-medium", voices: ["ru_RU-denis-medium", "ru_RU-dmitri-medium"] });
       if (init?.method === "POST") return reply({ reply: "Свет выключен.", actions: [] });
       return reply({ configured: true });
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<Voice onAuthLost={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "Talk to the house" }));
-    expect(await screen.findByRole("option", { name: "Irina (neural, Piper)" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "Denis (neural, Piper)" })).toBeTruthy();
+    expect(await screen.findByRole("option", { name: "Denis (neural, Piper)" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Dmitri (neural, Piper)" })).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Command"), { target: { value: "выключи свет" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     await waitFor(() => expect(played).toHaveBeenCalled());
     const tts = fetchMock.mock.calls.find(([u, i]) => u === "/api/tts" && i?.method === "POST")!;
-    expect(JSON.parse(String(tts[1]!.body))).toMatchObject({ text: "Свет выключен.", voice: "ru_RU-irina-medium" });
+    expect(JSON.parse(String(tts[1]!.body))).toMatchObject({ text: "Свет выключен.", voice: "ru_RU-denis-medium" });
+  });
+
+  it("offers a suggestion from the journal and teaches it on a tap", async () => {
+    let offered = [{ phrase: "хочу темноту", becameText: "выключи свет", times: 1 }];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/assistant/suggestions") return reply({ suggestions: offered });
+      if (url === "/api/assistant/teach") return ((offered = []), reply({ ok: true }));
+      if (url === "/api/tts") return reply({ piper: false, default: "", voices: [] });
+      return reply({ configured: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Voice onAuthLost={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Talk to the house" }));
+    fireEvent.click(await screen.findByRole("button", { name: /хочу темноту/ }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /хочу темноту/ })).toBeNull());
+    const call = fetchMock.mock.calls.find(([u]) => u === "/api/assistant/teach")!;
+    expect(JSON.parse(String((call[1] as RequestInit).body))).toEqual({ text: "хочу темноту" });
   });
 });

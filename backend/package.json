@@ -12,7 +12,8 @@
     "start": "node --env-file=.env dist/server.js",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "label": "tsx --env-file=.env src/label.ts"
+    "label": "tsx --env-file=.env src/label.ts",
+    "journal": "tsx --env-file=.env src/journalReport.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",

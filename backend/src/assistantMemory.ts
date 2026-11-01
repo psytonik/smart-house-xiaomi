@@ -55,6 +55,14 @@ export class AssistantMemory {
     return true;
   }
 
+  /** Teaches a phrase directly (from the journal report), not from a model run. */
+  teach(phrase: string, steps: Step[]): boolean {
+    if (this.learned.has(phrase) || this.learned.size >= MAX_LEARNED) return false;
+    this.learned.set(phrase, steps);
+    this.save();
+    return true;
+  }
+
   forget(phrase: string): boolean {
     const had = this.learned.delete(phrase);
     if (had) this.save();

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -75,6 +75,19 @@ describe("assistant API", () => {
   after(async () => {
     await app.close();
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("offers what the person meant after a failure, and teaches it only when approved", async () => {
+    const line = (at: string, text: string, via: string, ok: boolean) => JSON.stringify({ at, text, via, ok, reply: "x", actions: [] });
+    writeFileSync(join(dir, "assistant", "journal.jsonl"), [line("2026-11-01T10:00:00Z", "хочу темноту", "model", false), line("2026-11-01T10:00:20Z", "выключи свет", "rules", true)].join("\n") + "\n");
+    const offered = (await app.inject({ url: "/api/assistant/suggestions", headers: auth })).json().suggestions;
+    assert.deepEqual(offered, [{ phrase: "хочу темноту", becameText: "выключи свет", times: 1 }]);
+    const bad = await app.inject({ method: "POST", url: "/api/assistant/teach", headers: auth, payload: { text: "выдумка" } });
+    assert.equal(bad.statusCode, 409);
+    const ok = await app.inject({ method: "POST", url: "/api/assistant/teach", headers: auth, payload: { text: "Хочу темноту." } });
+    assert.equal(ok.statusCode, 200);
+    assert.deepEqual((await app.inject({ url: "/api/assistant/suggestions", headers: auth })).json().suggestions, []);
+    assert.equal((await app.inject({ url: "/api/assistant/journal", headers: auth })).json().learned[0].phrase, "хочу темноту");
   });
 
   it("says it is off without a key, and refuses commands", async () => {

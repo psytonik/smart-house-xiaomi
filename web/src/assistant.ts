@@ -46,6 +46,27 @@ export async function rememberPhrase(text: string): Promise<void> {
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not remember (${res.status})`);
 }
 
+export interface Suggestion {
+  phrase: string;
+  becameText: string;
+  times: number;
+}
+
+/** Phrases that failed and were followed by a command that worked: "say X means Y". */
+export async function suggestions(): Promise<Suggestion[]> {
+  try {
+    const res = await api("/api/assistant/suggestions");
+    return res.ok ? (((await res.json()) as { suggestions?: Suggestion[] }).suggestions ?? []) : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function teachPhrase(text: string): Promise<void> {
+  const res = await api("/api/assistant/teach", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
+  if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not teach (${res.status})`);
+}
+
 // The browser's speech recognition is not in TypeScript's DOM types yet (Chrome and Safari ship it, with a webkit prefix).
 interface Recognition {
   lang: string;
@@ -136,13 +157,18 @@ export async function piperVoices(): Promise<PiperVoice[]> {
 }
 
 let playing: HTMLAudioElement | null = null;
+/** Bumped by every stopSpeaking(): an answer that was still being fetched must not start playing after the microphone opened. */
+let speechId = 0;
 
 /** Plays Piper's answer; false when the server could not make it, so the caller can use the browser's voice instead. */
 async function speakWithPiper(text: string, voice: string): Promise<boolean> {
+  const mine = speechId;
   try {
     const res = await api("/api/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, speed: voiceChoice.rate(), ...(voice ? { voice } : {}) }) });
     if (!res.ok) return false;
-    const url = URL.createObjectURL(await res.blob());
+    const blob = await res.blob();
+    if (mine !== speechId) return true; // stopped while the voice was being made: stay silent
+    const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     audio.onended = () => URL.revokeObjectURL(url);
     playing = audio;
@@ -180,6 +206,7 @@ export function speak(text: string): void {
 }
 
 export function stopSpeaking(): void {
+  speechId++;
   playing?.pause();
   playing = null;
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();

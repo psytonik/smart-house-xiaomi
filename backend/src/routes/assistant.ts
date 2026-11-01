@@ -5,6 +5,7 @@ import type { AppContext } from "../context.js";
 import { plain, runAssistant, type ApiCall, type Brain } from "../assistant.js";
 import { AssistantMemory } from "../assistantMemory.js";
 import { HttpError } from "../go2rtc.js";
+import { analyze } from "../journalReport.js";
 import { OllamaError, ollamaBrain } from "../ollama.js";
 
 /** `brain` is only for tests; the real client reads ANTHROPIC_API_KEY (or a logged-in profile) itself. */
@@ -71,6 +72,15 @@ export function assistantRoutes(app: FastifyInstance, ctx: AppContext, brain?: B
     return { ok: true };
   });
   app.post<{ Body: { text: string } }>("/api/assistant/forget", { schema: { body: phrase } }, async (req) => ({ ok: memory.forget(plain(req.body.text)) }));
+
+  // Phrases that failed and were fixed by the person's next words (see journalReport.ts); the person approves them here, the steps come from the server.
+  const suggestions = () => analyze(memory.recent(100_000).reverse(), new Set(memory.list().map((l) => l.phrase))).proposals;
+  app.get("/api/assistant/suggestions", async () => ({ suggestions: suggestions().slice(0, 5).map(({ phrase, becameText, times }) => ({ phrase, becameText, times })) }));
+  app.post<{ Body: { text: string } }>("/api/assistant/teach", { schema: { body: phrase } }, async (req) => {
+    const found = suggestions().find((s) => s.phrase === plain(req.body.text));
+    if (!found || !memory.teach(found.phrase, found.steps)) throw new HttpError(409, "there is no such suggestion");
+    return { ok: true };
+  });
 
   // What it was asked and who understood it: the place to see which phrases still need a rule.
   app.get("/api/assistant/journal", async () => ({ learned: memory.list(), recent: memory.recent(100) }));

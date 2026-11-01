@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { AuthError } from "../api";
-import { askAssistant, assistantConfigured, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, voiceChoice, type PiperVoice, type Recognition, type Turn } from "../assistant";
+import { askAssistant, assistantConfigured, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, suggestions, teachPhrase, voiceChoice, type PiperVoice, type Recognition, type Suggestion, type Turn } from "../assistant";
 
 type Phase = "idle" | "listening" | "thinking";
 
@@ -15,6 +15,7 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
   const [typed, setTyped] = useState("");
   const [teachable, setTeachable] = useState(false);
   const [taught, setTaught] = useState(false);
+  const [ideas, setIdeas] = useState<Suggestion[]>([]);
   const lastPhrase = useRef("");
   const history = useRef<Turn[]>([]);
   const rec = useRef<Recognition | null>(null);
@@ -41,6 +42,16 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
       live = false;
     };
   }, []);
+
+  // What the journal says the person meant, offered each time the panel opens.
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    void suggestions().then((s) => live && setIdeas(s));
+    return () => {
+      live = false;
+    };
+  }, [open]);
 
   const ask = useCallback(
     async (text: string) => {
@@ -134,6 +145,26 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
             </button>
           )}
           {taught && <p className="voice-note">Remembered: next time it runs instantly.</p>}
+          {ideas.length > 0 && phase === "idle" && (
+            <div className="voice-ideas">
+              <p className="voice-note">Did you mean it? Teach it once:</p>
+              {ideas.map((i) => (
+                <button
+                  key={i.phrase}
+                  type="button"
+                  className="voice-remember"
+                  onClick={() => {
+                    void teachPhrase(i.phrase).then(
+                      () => setIdeas((all) => all.filter((x) => x.phrase !== i.phrase)),
+                      (e: unknown) => setError(e instanceof Error ? e.message : "could not teach"),
+                    );
+                  }}
+                >
+                  «{i.phrase}» = «{i.becameText}»
+                </button>
+              ))}
+            </div>
+          )}
           {error && (
             <p className="voice-error" role="alert">
               {error}
