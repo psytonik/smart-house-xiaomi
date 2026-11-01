@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
+import type { PiperConfig } from "./tts.js";
 
 export interface MotionConfig {
   enabled: boolean;
@@ -89,6 +90,8 @@ export interface Config {
   /** Lifetime of signed media links, in seconds. */
   signedUrlTtlSec: number;
   detect: DetectConfig;
+  /** Neural voice for the assistant's answers (Piper). Off when its environment or voice file is not there. */
+  piper?: PiperConfig;
   /** Voice assistant. "ollama" is a free model on this computer; "anthropic" needs a key. */
   assistant: { enabled: boolean; provider: "ollama" | "anthropic"; model: string; ollamaUrl: string };
   /** The oldest clips are removed beyond this size. */
@@ -122,6 +125,16 @@ function defaultModelPath(): string {
   const dir = resolve(import.meta.dirname, "..", "models");
   const medium = resolve(dir, "yolox_m.onnx");
   return existsSync(medium) || !existsSync(resolve(dir, "yolox_tiny.onnx")) ? medium : resolve(dir, "yolox_tiny.onnx");
+}
+
+/** Piper is on when its environment (venv-piper) and a voice file exist; TTS_PIPER=false turns it off. */
+function piperConfig(env: NodeJS.ProcessEnv): PiperConfig | undefined {
+  if (env.TTS_PIPER === "false") return undefined;
+  const root = resolve(import.meta.dirname, "..", "..");
+  const python = env.PIPER_PYTHON ?? resolve(root, "venv-piper", "bin", "python");
+  const model = env.PIPER_MODEL ?? resolve(import.meta.dirname, "..", "models", "piper", "ru_RU-irina-medium.onnx");
+  if (!existsSync(python) || !existsSync(model)) return undefined;
+  return { python, model, port: num(env, "PIPER_PORT", 5055, 1, 65535) };
 }
 
 function assistantConfig(env: NodeJS.ProcessEnv): Config["assistant"] {
@@ -173,6 +186,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       maxFrames: 5,
       discardEmpty: env.DETECT_DISCARD_EMPTY !== "false",
     },
+    piper: piperConfig(env),
     assistant: assistantConfig(env),
     maxStorageBytes: num(env, "MAX_STORAGE_GB", 20, 0, undefined, true) * 1024 ** 3,
     pushMinIntervalSec: num(env, "PUSH_MIN_INTERVAL_SEC", 120, 0),

@@ -15,4 +15,5 @@ logs/
 .run/
 backend/models/
 venv/
+venv-piper/
 .idea/

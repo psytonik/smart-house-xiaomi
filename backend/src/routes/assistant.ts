@@ -74,4 +74,20 @@ export function assistantRoutes(app: FastifyInstance, ctx: AppContext, brain?: B
 
   // What it was asked and who understood it: the place to see which phrases still need a rule.
   app.get("/api/assistant/journal", async () => ({ learned: memory.list(), recent: memory.recent(100) }));
+
+  // The assistant's voice: Piper, a neural voice on this computer. The page falls back to the browser's voices without it.
+  app.get("/api/tts", async () => (ctx.tts ? { piper: true, ...ctx.tts.voices() } : { piper: false, default: "", voices: [] }));
+  app.post<{ Body: { text: string; speed?: number; voice?: string } }>(
+    "/api/tts",
+    { schema: { body: { type: "object", additionalProperties: false, required: ["text"], properties: { text: { type: "string", minLength: 1, maxLength: 400 }, speed: { type: "number", minimum: 0.5, maximum: 2 }, voice: { type: "string", pattern: "^[A-Za-z0-9_-]{1,60}$" } } } } },
+    async (req, reply) => {
+      if (!ctx.tts) throw new HttpError(404, "the neural voice is not set up (see docs/assistant.md, Piper)");
+      try {
+        return reply.type("audio/wav").send(await ctx.tts.synthesize(req.body.text, req.body.speed, req.body.voice));
+      } catch (e) {
+        req.log.error(e);
+        throw new HttpError(502, "the voice is not answering, the browser's voice will be used");
+      }
+    },
+  );
 }

@@ -6,6 +6,7 @@ import { ObjectDetector } from "./detect.js";
 import { Go2rtc } from "./go2rtc.js";
 import { CozyLight } from "./light.js";
 import { PushService } from "./push.js";
+import { PiperTts } from "./tts.js";
 import { SerialQueue } from "./queue.js";
 import { MotionRecorder } from "./recorder.js";
 import { UrlSigner } from "./signing.js";
@@ -27,6 +28,8 @@ export interface AppContext {
   ptzQueue: SerialQueue;
   xiaomi: XiaomiSetup;
   light?: CozyLight;
+  /** The neural voice, when Piper is set up. */
+  tts?: PiperTts;
   snapshotsDir: string;
   /** Stops background work (recorder, stream keeper, held push summary). */
   close(): Promise<void>;
@@ -52,6 +55,8 @@ export async function createContext(cfg: Config, log: { info: (m: string) => voi
   push.attach(recorder);
   await recorder.start();
 
+  const tts = cfg.piper ? new PiperTts(cfg.piper, (m) => log.info(m)) : undefined;
+
   return {
     cfg,
     go,
@@ -63,11 +68,13 @@ export async function createContext(cfg: Config, log: { info: (m: string) => voi
     limiter: new FailureLimiter(cfg.authMaxFailures, cfg.authWindowSec * 1000),
     ptzQueue: new SerialQueue(4),
     xiaomi: new XiaomiSetup(cfg),
+    tts,
     light: cfg.lightIp ? new CozyLight(cfg.lightIp, cfg.lightPort) : undefined,
     snapshotsDir,
     async close() {
       go.close();
       push.close();
+      tts?.close();
       await recorder.stop();
     },
   };

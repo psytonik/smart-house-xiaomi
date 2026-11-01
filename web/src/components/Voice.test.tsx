@@ -62,3 +62,27 @@ describe("Voice remembering", () => {
     expect(JSON.parse(String(learn[1]!.body))).toEqual({ text: "включи ночник" });
   });
 });
+
+describe("Voice with Piper", () => {
+  it("offers the neural voice and speaks the answer with it", async () => {
+    const played = vi.fn(async () => {});
+    vi.stubGlobal("Audio", class { onended: (() => void) | null = null; play = played; pause() {} });
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:x", revokeObjectURL: () => {} }));
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/tts" && init?.method === "POST") return new Response("RIFFfake", { status: 200 });
+      if (url === "/api/tts") return reply({ piper: true, default: "ru_RU-irina-medium", voices: ["ru_RU-irina-medium", "ru_RU-denis-medium"] });
+      if (init?.method === "POST") return reply({ reply: "Свет выключен.", actions: [] });
+      return reply({ configured: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Voice onAuthLost={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Talk to the house" }));
+    expect(await screen.findByRole("option", { name: "Irina (neural, Piper)" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Denis (neural, Piper)" })).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Command"), { target: { value: "выключи свет" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(played).toHaveBeenCalled());
+    const tts = fetchMock.mock.calls.find(([u, i]) => u === "/api/tts" && i?.method === "POST")!;
+    expect(JSON.parse(String(tts[1]!.body))).toMatchObject({ text: "Свет выключен.", voice: "ru_RU-irina-medium" });
+  });
+});

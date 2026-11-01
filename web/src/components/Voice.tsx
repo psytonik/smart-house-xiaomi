@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { AuthError } from "../api";
-import { askAssistant, assistantConfigured, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, voiceChoice, type Recognition, type Turn } from "../assistant";
+import { askAssistant, assistantConfigured, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, voiceChoice, type PiperVoice, type Recognition, type Turn } from "../assistant";
 
 type Phase = "idle" | "listening" | "thinking";
 
@@ -20,6 +20,7 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
   const rec = useRef<Recognition | null>(null);
   const canListen = recognitionCtor() !== undefined;
   const [voices, setVoices] = useState<string[]>([]);
+  const [piper, setPiper] = useState<PiperVoice[]>([]);
   const [voice, setVoice] = useState(voiceChoice.get);
   const [rate, setRate] = useState(voiceChoice.rate);
 
@@ -35,6 +36,7 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
   useEffect(() => {
     let live = true;
     void assistantConfigured().then((ok) => live && setConfigured(ok));
+    void piperVoices().then((v) => live && setPiper(v));
     return () => {
       live = false;
     };
@@ -137,18 +139,23 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
               {error}
             </p>
           )}
-          {voices.length > 0 && (
+          {(voices.length > 0 || piper.length > 0) && (
             <div className="voice-settings">
               <label>
                 Voice
                 <select
-                  value={voice || voices[0]}
+                  value={voice || piper[0]?.value || voices[0]}
                   onChange={(e) => {
                     setVoice(e.target.value);
                     voiceChoice.set(e.target.value);
                     speak("Привет, я голос вашего дома.");
                   }}
                 >
+                  {piper.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
                   {voices.map((v) => (
                     <option key={v} value={v}>
                       {v}

@@ -84,10 +84,13 @@ function store(key: string, value: string): void {
   }
 }
 
-/** Russian voices installed on this computer (the list fills in a moment after the page opens). */
+/** Voices the household does not want to hear, in any variant ("Milena", "Milena (Enhanced)"). */
+const UNWANTED = /(milena|милена)/i;
+
+/** Russian voices installed on this computer (the list fills in a moment after the page opens), without the unwanted ones. */
 export function russianVoices(): SpeechSynthesisVoice[] {
   if (!("speechSynthesis" in window)) return [];
-  return window.speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("ru"));
+  return window.speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("ru") && !UNWANTED.test(v.name));
 }
 
 export const voiceChoice = {
@@ -100,19 +103,84 @@ export const voiceChoice = {
   setRate: (rate: number): void => store(RATE_KEY, String(rate)),
 };
 
-/** Says the text out loud in Russian with the chosen voice, replacing whatever is being said. */
-export function speak(text: string): void {
+/** The neural voice on the server (Piper). Learned once from /api/tts; false until then and when it is not set up. */
+let piperKnown = false;
+let piperDefault = "";
+/** Choice values for Piper's voices look like "piper:ru_RU-denis-medium". */
+export const PIPER = "piper:";
+
+export interface PiperVoice {
+  /** The choice value to store. */
+  value: string;
+  label: string;
+}
+
+/** "ru_RU-denis-medium" is shown as "Denis (neural, Piper)". */
+export const piperLabel = (id: string): string => {
+  const name = id.split("-")[1] ?? id;
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} (neural, Piper)`;
+};
+
+/** Piper's voices on the server (none when it is not set up). Also remembers whether Piper can be used at all. */
+export async function piperVoices(): Promise<PiperVoice[]> {
+  try {
+    const res = await api("/api/tts");
+    const body = res.ok ? ((await res.json()) as { piper?: boolean; default?: string; voices?: string[] }) : {};
+    piperKnown = body.piper === true;
+    piperDefault = body.default ?? "";
+    return piperKnown ? (body.voices ?? []).map((id) => ({ value: PIPER + id, label: piperLabel(id) })) : [];
+  } catch {
+    piperKnown = false;
+    return [];
+  }
+}
+
+let playing: HTMLAudioElement | null = null;
+
+/** Plays Piper's answer; false when the server could not make it, so the caller can use the browser's voice instead. */
+async function speakWithPiper(text: string, voice: string): Promise<boolean> {
+  try {
+    const res = await api("/api/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, speed: voiceChoice.rate(), ...(voice ? { voice } : {}) }) });
+    if (!res.ok) return false;
+    const url = URL.createObjectURL(await res.blob());
+    const audio = new Audio(url);
+    audio.onended = () => URL.revokeObjectURL(url);
+    playing = audio;
+    await audio.play();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function speakWithBrowser(text: string): void {
   if (!("speechSynthesis" in window)) return;
   window.speechSynthesis.cancel();
+  const voices = russianVoices();
+  // With no wanted voice left the answer stays on the screen: the browser would otherwise pick its default (Milena).
+  if (voices.length === 0) return;
   const u = new SpeechSynthesisUtterance(text);
   u.lang = "ru-RU";
   u.rate = voiceChoice.rate();
-  const voices = russianVoices();
-  const voice = voices.find((v) => v.name === voiceChoice.get()) ?? voices[0];
-  if (voice) u.voice = voice;
+  u.voice = voices.find((v) => v.name === voiceChoice.get()) ?? voices[0]!;
   window.speechSynthesis.speak(u);
 }
 
+/** Says the text out loud in Russian with the chosen voice (Piper by default when the server has it), replacing whatever is being said. */
+export function speak(text: string): void {
+  stopSpeaking();
+  const choice = voiceChoice.get();
+  if (piperKnown && (choice === "" || choice.startsWith(PIPER))) {
+    void speakWithPiper(text, choice.startsWith(PIPER) ? choice.slice(PIPER.length) : piperDefault).then((ok) => {
+      if (!ok) speakWithBrowser(text);
+    });
+    return;
+  }
+  speakWithBrowser(text);
+}
+
 export function stopSpeaking(): void {
+  playing?.pause();
+  playing = null;
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
 }

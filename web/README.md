@@ -28,6 +28,7 @@ npm run build      # собирает в ../backend/public, бэкенд отд�
 | `src/components/Clips.tsx`, `src/episodes.ts` | клипы, сгруппированные в эпизоды, фильтры по дню и по найденным объектам, плеер с листанием ([ADR 0010](../docs/adr/0010-episodes-and-day-filter.md), [ADR 0012](../docs/adr/0012-object-detection.md)) |
 | `src/components/VacuumPage.tsx`, `vacuumText.ts` | страница `/vacuum`: робот, настройки, карта, уход, станция, комнаты, расписание ([`docs/vacuum.md`](../docs/vacuum.md)) |
 | `src/components/TvPage.tsx`, `tvText.ts` | страница `/tv`: пульт, источники, приложения, запущенные приложения, сопряжение ([`docs/tv.md`](../docs/tv.md)) |
+| `src/components/Voice.tsx`, `src/assistant.ts` | микрофон на каждой странице: распознавание речи, ответ помощника, озвучка (Piper или голос браузера), выбор голоса, «Remember this phrase» ([`docs/assistant.md`](../docs/assistant.md)) |
 | `src/route.ts`, `src/components/Nav.tsx`, `Shell.tsx` | адреса страниц (`/`, `/vacuum`, `/lights`, `/tv`) и общая рамка с навигацией |
 | `src/components/Gallery.tsx` | снимки; файлы открываются по подписанным ссылкам ([ADR 0001](../docs/adr/0001-signed-media-urls.md)) |
 

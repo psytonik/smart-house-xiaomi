@@ -61,6 +61,9 @@ npm run dev            # открой http://localhost:3100 и введи API_TO
 | GET | `/api/light` | состояние ленты CozyLife: `on`, `brightness` 0-100, `hue` 0-360, `saturation` 0-100, `temperature` 0-100 (или `configured:false`, `reachable:false`) |
 | POST | `/api/light` | любые из `on`, `brightness`, `hue`, `saturation`, `temperature`; ответ - новое состояние |
 | | `/api/vacuum/…` | пылесос: состояние, команды, настройки, уход, карта, комнаты, расписание, история; полный список в [`docs/vacuum.md`](../docs/vacuum.md#api) |
+| GET, POST | `/api/assistant` | голосовой помощник: `{text, history?}` → `{reply, actions, learnable?}` ([`docs/assistant.md`](../docs/assistant.md#api)) |
+| POST | `/api/assistant/learn`, `/forget` | запомнить или забыть фразу; `GET /api/assistant/journal`: журнал и выученное |
+| GET, POST | `/api/tts` | нейроголос Piper: список голосов и синтез речи (WAV) |
 | | `/api/tv/…` | телевизор: сопряжение, клавиши, приложения, источники, запущенные приложения; полный список в [`docs/tv.md`](../docs/tv.md#api) |
 
 Прокси пропускает только перечисленные эндпоинты go2rtc и всегда подставляет имя потока из `STREAM_NAME`.
@@ -112,6 +115,8 @@ curl -s -H "Authorization: Bearer $T" localhost:3000/api/snapshot -o snap.jpg
 | `SIGNED_URL_TTL_SEC` | `3600` | срок подписанных ссылок |
 | `VACUUM_IP`, `VACUUM_TOKEN` | пусто | пылесос; без них блок скрыт. Остальные `VACUUM_*` в [`docs/vacuum.md`](../docs/vacuum.md#настройка) |
 | `TV_IP` | пусто | телевизор (Google TV); без него страница `/tv` пишет, как настроить |
+| `ASSISTANT_PROVIDER`, `ASSISTANT_MODEL`, `OLLAMA_URL`, `ANTHROPIC_API_KEY` | `ollama`, `qwen3:8b`, `http://127.0.0.1:11434`, пусто | чем помощник понимает необычные фразы: бесплатная модель на Mac или Claude ([`docs/assistant.md`](../docs/assistant.md#настройка)) |
+| `TTS_PIPER`, `PIPER_PYTHON`, `PIPER_MODEL`, `PIPER_PORT` | включён, если установлен | голос ответов (Piper) |
 | `TV_ADB`, `TV_ADB_PATH` | пусто | меню источников, источники, приложения вроде Prisma и запущенные приложения через ADB ([`docs/tv.md`](../docs/tv.md#настройка)) |
 
 ## Лента CozyLife
@@ -131,6 +136,10 @@ Dreame L10 Plus по локальной сети (miIO), облако Xiaomi т�
 ## Телевизор
 
 TCL (Google TV) по локальной сети: свой клиент Android TV Remote v2 и ADB для меню источников. Подробно: [`docs/tv.md`](../docs/tv.md), решения: [ADR 0017](../docs/adr/0017-tv-remote-own-client.md), [ADR 0018](../docs/adr/0018-tv-source-choice-over-adb.md). Включается `TV_IP`; сопряжение один раз со страницы `/tv`; ADB (`TV_ADB`) необязателен, но без него нет меню источников. Нужен `openssl` для сертификата клиента.
+
+## Голосовой помощник
+
+Микрофон на каждой странице; свет, пылесос, камера и телевизор голосом. Повседневные команды разбирают правила (`src/quick.ts`), необычные фразы понимает модель (бесплатный Ollama или Claude), удачные фразы можно запомнить. Ответы озвучивает Piper. Подробно: [`docs/assistant.md`](../docs/assistant.md), решения: [ADR 0020](../docs/adr/0020-voice-assistant.md).
 
 После правок бэкенда его нужно перезапустить, иначе новые маршруты отвечают 404: `launchctl kickstart -k gui/$(id -u)/com.psytonik.xiaomi-camera` (при включённом автозапуске).
 
