@@ -5,6 +5,8 @@ import { CODE_PATTERN, appName } from "./tvText";
 
 /** How often the page asks the TV what it is doing (screen, volume, the app in front). */
 const POLL_MS = 3000;
+/** How long the On button stays locked after a wake-up: the server sends its switch once and waits this long (WAKE_COOLDOWN_MS there). */
+const WAKE_WAIT_MS = 45_000;
 /** A held arrow or volume key repeats after this delay, then at this rate. */
 const HOLD_MS = 400;
 const REPEAT_MS = 120;
@@ -53,12 +55,28 @@ export function TvPage({ onLogout }: { onLogout: () => void }) {
   }, []);
 
   const ready = state?.link === "ready";
+  // After On, the TV takes about half a minute to answer; a second press in that time would switch it off again.
+  const [waking, setWaking] = useState(false);
+  const wakeTimer = useRef<number>(0);
+  useEffect(() => () => window.clearTimeout(wakeTimer.current), []);
+  useEffect(() => {
+    if (ready) setWaking(false);
+  }, [ready]);
   const press = useCallback(
     (key: TvKey) => {
-      sendTvKey(key).catch(fail);
+      const wakes = key === "power" && !ready;
+      if (wakes) {
+        setWaking(true);
+        window.clearTimeout(wakeTimer.current);
+        wakeTimer.current = window.setTimeout(() => setWaking(false), WAKE_WAIT_MS);
+      }
+      sendTvKey(key).catch((e) => {
+        if (wakes) setWaking(false); // nothing was sent: the next press may try again
+        fail(e);
+      });
       if (key === "volumeUp" || key === "volumeDown" || key === "mute" || key === "power") window.setTimeout(load, 600); // the TV says its new state a moment later
     },
-    [fail, load],
+    [fail, load, ready],
   );
 
   // the keyboard works the remote: arrows, Enter, Esc/Backspace, + and -, M
@@ -89,7 +107,7 @@ export function TvPage({ onLogout }: { onLogout: () => void }) {
         {state?.configured && state.paired && (
           <div className="vgrid tv-grid">
             <div className="vcol">
-              <Status state={state} press={press} />
+              <Status state={state} press={press} waking={waking} />
               <Remote ready={ready} press={press} adb={state.adb === true} />
             </div>
             <div className="vcol">
@@ -118,7 +136,7 @@ export function TvPage({ onLogout }: { onLogout: () => void }) {
 }
 
 // ---------- status ----------
-function Status({ state, press }: { state: TvState; press: (key: TvKey) => void }) {
+function Status({ state, press, waking }: { state: TvState; press: (key: TvKey) => void; waking: boolean }) {
   const ready = state.link === "ready";
   const v = state.volume;
   return (
@@ -129,12 +147,13 @@ function Status({ state, press }: { state: TvState; press: (key: TvKey) => void 
         </p>
         {ready && state.app && <p className="tv-now">Now: {appName(state.app)}</p>}
         {ready && v && <p className="tv-now">{v.muted ? "Muted" : `Volume ${v.level}`}</p>}
-        {!ready && <p className="hint">{state.wake ? "The TV may be off or asleep. Press On to wake it; this page connects by itself in about half a minute." : "The TV may be off or asleep. Turn it on with its own remote; this page connects by itself."}</p>}
+        {!ready && waking && <p className="hint">The TV is waking up. Wait about half a minute; this page connects by itself. Pressing again would switch it off.</p>}
+        {!ready && !waking && <p className="hint">{state.wake ? "The TV may be off or asleep. Press On to wake it; this page connects by itself in about half a minute." : "The TV may be off or asleep. Turn it on with its own remote; this page connects by itself."}</p>}
       </div>
       {/* a sleeping TV cannot take keys, but a wake-up packet reaches it (the server sends one for Power when the TV does not answer) */}
-      <button type="button" className="tv-power" onClick={() => press("power")} disabled={!ready && !state.wake} aria-label={!ready || state.powered === false ? "Turn the TV on" : "Turn the TV off"}>
+      <button type="button" className="tv-power" onClick={() => press("power")} disabled={(!ready && !state.wake) || waking} aria-label={waking ? "The TV is waking up" : !ready || state.powered === false ? "Turn the TV on" : "Turn the TV off"}>
         <Icon d="M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0" />
-        <span>{!ready || state.powered === false ? "On" : "Off"}</span>
+        <span>{waking ? "…" : !ready || state.powered === false ? "On" : "Off"}</span>
       </button>
     </section>
   );

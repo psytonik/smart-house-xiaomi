@@ -57,7 +57,16 @@ describe("TvPage", () => {
     render(<TvPage onLogout={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "Turn the TV on" }));
     await waitFor(() => expect(api.sendTvKey).toHaveBeenCalledWith("power"));
-    expect(screen.getByText(/Press On to wake it/)).toBeTruthy();
+    // the TV is waking up: the button locks, so a second press cannot switch it off again
+    expect(await screen.findByText(/The TV is waking up/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "The TV is waking up" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(api.sendTvKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("says how to wake a sleeping TV before the button is pressed", async () => {
+    vi.mocked(api.getTv).mockResolvedValue(ready({ link: "offline", powered: undefined, app: undefined, volume: undefined, wake: true }));
+    render(<TvPage onLogout={() => {}} />);
+    expect(await screen.findByText(/Press On to wake it/)).toBeTruthy();
   });
 
   it("locks the keys while the TV doesn't answer, and says why", async () => {
