@@ -11,6 +11,10 @@ import { broadcastsFor, parseMacs, wake } from "../wol.js";
 /** How long Power is not sent again after a wake-up: the infrared key is a switch, and a TV takes about half a minute to answer. */
 export const WAKE_COOLDOWN_MS = 45_000;
 
+/** The TV answers within about ten seconds of a frame it took; after this long without an answer the frame is sent again (a frame is sometimes missed), this many times. */
+export const WAKE_RETRY_MS = 20_000;
+export const WAKE_RETRIES = 2;
+
 /** The parts of the wake-up that tests replace. */
 export interface TvDeps {
   sendWake: typeof wake;
@@ -18,12 +22,16 @@ export interface TvDeps {
   /** Is the TV on the network? */
   awake: (host: string, port: number) => Promise<boolean>;
   now: () => number;
+  /** Waits; the wake-up retries run on it. */
+  sleep: (ms: number) => Promise<void>;
 }
 
 /** A Google TV / Android TV (TCL and others) on the local network, as a remote control. Configured with TV_IP (backend/.env). */
 export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.ProcessEnv = process.env, deps: Partial<TvDeps> = {}): void {
-  const { sendWake = wake, sendIr = sendIrWake, awake = isAwake, now = Date.now } = deps;
+  const { sendWake = wake, sendIr = sendIrWake, awake = isAwake, now = Date.now, sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)) } = deps;
   let wokeAt = -Infinity;
+  let closing = false;
+  app.addHook("onClose", async () => void (closing = true));
   const remotePort = Number(env.TV_REMOTE_PORT) || 6466;
   let tv: TvRemote | undefined;
   const host = env.TV_IP?.trim();
@@ -159,6 +167,25 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
   );
   app.post("/api/tv/pair/cancel", () => guarded(() => need().cancelPairing()));
 
+  // A frame is sometimes missed by the sleeping TV. If it still does not answer after a while, send it again: a TV that is not answering
+  // cannot be switched off by it. The TV that did take it answers well before the first retry.
+  const retryWake = () => {
+    if (!irReady || !host) return;
+    void (async () => {
+      for (let i = 0; i < WAKE_RETRIES; i++) {
+        await sleep(WAKE_RETRY_MS);
+        if (closing || (await awake(host, remotePort))) return;
+        try {
+          await sendIr(irAdb!, irPhone!);
+          app.log.info(`tv infrared wake sent again (${i + 1}): the TV did not answer`);
+        } catch (e) {
+          app.log.warn(`tv infrared wake retry failed: ${(e as Error).message}`);
+          return;
+        }
+      }
+    })();
+  };
+
   app.post<{ Body: { key: TvKey } }>(
     "/api/tv/key",
     { schema: { body: { type: "object", additionalProperties: false, required: ["key"], properties: { key: { type: "string", enum: KEY_NAMES } } } } },
@@ -178,6 +205,7 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
             if (irReady) {
               try {
                 await sendIr(irAdb!, irPhone!);
+                retryWake(); // in the background: the page does not wait for it
                 return;
               } catch (e) {
                 app.log.warn(`tv infrared wake failed: ${(e as Error).message}`);

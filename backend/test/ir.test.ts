@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import Fastify from "fastify";
 import { createServer } from "node:net";
 import { isAwake } from "../src/awake.js";
-import { tvRoutes, WAKE_COOLDOWN_MS } from "../src/routes/tv.js";
+import { tvRoutes, WAKE_COOLDOWN_MS, WAKE_RETRIES, WAKE_RETRY_MS } from "../src/routes/tv.js";
 import { CARRIER_HZ, rcaTimings, sendIrWake } from "../src/ir.js";
 import { testConfig } from "./helpers.js";
 
@@ -127,6 +127,43 @@ describe("infrared frame", () => {
     assert.equal(sent, 2);
     await app.close();
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("a missed infrared frame", () => {
+  const setup = (awakeAfter: number) => {
+    const dir = mkdtempSync(join(tmpdir(), "ir-"));
+    const waits: number[] = [];
+    let sent = 0;
+    let checks = 0;
+    const app = Fastify();
+    tvRoutes(app, { cfg: testConfig({ dataDir: dir }) } as never, { TV_IP: "127.0.0.1", TV_IR_PHONE: "phone1", TV_ADB_PATH: fakeAdb(dir, "x") }, {
+      sendIr: async () => void sent++,
+      // the first check is the press itself, the next ones are the retries
+      awake: async () => ++checks > awakeAfter,
+      sleep: async (ms) => void waits.push(ms),
+    });
+    return { app, dir, waits, sent: () => sent };
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 30));
+
+  it("is sent again when the TV does not answer, up to the limit", async () => {
+    const t = setup(Infinity);
+    await t.app.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } });
+    await settle();
+    assert.equal(t.sent(), 1 + WAKE_RETRIES);
+    assert.deepEqual(t.waits, Array(WAKE_RETRIES).fill(WAKE_RETRY_MS));
+    await t.app.close();
+    rmSync(t.dir, { recursive: true, force: true });
+  });
+
+  it("is not sent again once the TV answers", async () => {
+    const t = setup(1); // up at the first retry check
+    await t.app.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } });
+    await settle();
+    assert.equal(t.sent(), 1);
+    await t.app.close();
+    rmSync(t.dir, { recursive: true, force: true });
   });
 });
 
