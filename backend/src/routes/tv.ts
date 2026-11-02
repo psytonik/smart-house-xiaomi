@@ -4,11 +4,27 @@ import { HttpError } from "../go2rtc.js";
 import { TvError, TvRemote } from "../tv.js";
 import { findAdb, TvAdb } from "../tvAdb.js";
 import { APPS, APP_IDS, KEY_NAMES, type TvApp, type TvKey } from "../tv/messages.js";
+import { isAwake } from "../awake.js";
 import { PHONE_SERIAL, sendIrWake } from "../ir.js";
 import { broadcastsFor, parseMacs, wake } from "../wol.js";
 
+/** How long Power is not sent again after a wake-up: the infrared key is a switch, and a TV takes about half a minute to answer. */
+export const WAKE_COOLDOWN_MS = 45_000;
+
+/** The parts of the wake-up that tests replace. */
+export interface TvDeps {
+  sendWake: typeof wake;
+  sendIr: typeof sendIrWake;
+  /** Is the TV on the network? */
+  awake: (host: string, port: number) => Promise<boolean>;
+  now: () => number;
+}
+
 /** A Google TV / Android TV (TCL and others) on the local network, as a remote control. Configured with TV_IP (backend/.env). */
-export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.ProcessEnv = process.env, sendWake: typeof wake = wake, sendIr: typeof sendIrWake = sendIrWake): void {
+export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.ProcessEnv = process.env, deps: Partial<TvDeps> = {}): void {
+  const { sendWake = wake, sendIr = sendIrWake, awake = isAwake, now = Date.now } = deps;
+  let wokeAt = -Infinity;
+  const remotePort = Number(env.TV_REMOTE_PORT) || 6466;
   let tv: TvRemote | undefined;
   const host = env.TV_IP?.trim();
   if (host) {
@@ -149,21 +165,33 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
     (req) => {
       // the INPUT key of this app opens the TV's own Source Choice, which only ADB can reach
       if (req.body.key === "input" && adb) return guarded(() => adb!.openSourceMenu());
-      // Power while the TV does not answer: it is asleep (or off), so wake it instead of failing
-      if (req.body.key === "power" && (irReady || macs.length > 0) && host && tv?.status().link !== "ready") {
-        return guarded(async () => {
-          // infrared first; the packet is the fallback when the phone is not there
-          if (irReady) {
-            try {
-              await sendIr(irAdb!, irPhone!);
-              return;
-            } catch (e) {
-              app.log.warn(`tv infrared wake failed: ${(e as Error).message}`);
-              if (macs.length === 0) throw e;
+      // Power while the TV is not on the network: it is asleep (or off), so wake it instead of failing.
+      // The link status lags behind a TV that has just gone to sleep, so the network is asked directly.
+      if (req.body.key === "power" && (irReady || macs.length > 0) && host) {
+        return awake(host, remotePort).then((up) => {
+          if (up) return guarded(() => need().press("power"));
+          // the infrared key is a switch: a second one before the TV has answered would turn it off again
+          if (now() - wokeAt < WAKE_COOLDOWN_MS) return { ok: true, woke: true, waiting: true };
+          wokeAt = now();
+          return guarded(async () => {
+            // infrared first; the packet is the fallback when the phone is not there
+            if (irReady) {
+              try {
+                await sendIr(irAdb!, irPhone!);
+                return;
+              } catch (e) {
+                app.log.warn(`tv infrared wake failed: ${(e as Error).message}`);
+                if (macs.length === 0) throw e;
+              }
             }
-          }
-          await sendWake(macs, broadcastsFor(host));
-        }).then((r) => ({ ...r, woke: true }));
+            await sendWake(macs, broadcastsFor(host));
+          })
+            .then((r) => ({ ...r, woke: true }))
+            .catch((e) => {
+              wokeAt = -Infinity; // nothing was sent: the next press may try again
+              throw e;
+            });
+        });
       }
       return guarded(() => need().press(req.body.key));
     },

@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import Fastify from "fastify";
-import { tvRoutes } from "../src/routes/tv.js";
+import { createServer } from "node:net";
+import { isAwake } from "../src/awake.js";
+import { tvRoutes, WAKE_COOLDOWN_MS } from "../src/routes/tv.js";
 import { CARRIER_HZ, rcaTimings, sendIrWake } from "../src/ir.js";
 import { testConfig } from "./helpers.js";
 
@@ -72,7 +74,7 @@ describe("infrared frame", () => {
     const irs: string[] = [];
     const packets: string[][] = [];
     const app = Fastify();
-    tvRoutes(app, { cfg: testConfig({ dataDir: dir }) } as never, env, async (macs) => void packets.push(macs), async (_adb, serial) => void irs.push(serial));
+    tvRoutes(app, { cfg: testConfig({ dataDir: dir }) } as never, env, { sendWake: async (macs) => void packets.push(macs), sendIr: async (_adb, serial) => void irs.push(serial), awake: async () => false });
     assert.equal((await app.inject({ url: "/api/tv" })).json().wake, true);
     assert.deepEqual((await app.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } })).json(), { ok: true, woke: true });
     assert.deepEqual(irs, ["phone1"]);
@@ -80,10 +82,63 @@ describe("infrared frame", () => {
     await app.close();
 
     const failing = Fastify();
-    tvRoutes(failing, { cfg: testConfig({ dataDir: dir }) } as never, env, async (macs) => void packets.push(macs), async () => { throw new Error("phone unplugged"); });
+    tvRoutes(failing, { cfg: testConfig({ dataDir: dir }) } as never, env, { sendWake: async (macs) => void packets.push(macs), sendIr: async () => { throw new Error("phone unplugged"); }, awake: async () => false });
     assert.deepEqual((await failing.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } })).json(), { ok: true, woke: true });
     assert.deepEqual(packets, [["d07602eb6cb9"]]); // the phone was not there: the wake-up packet instead
     await failing.close();
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("does not wake a TV that is on the network, even if its link status is stale", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ir-"));
+    const irs: string[] = [];
+    const app = Fastify();
+    tvRoutes(app, { cfg: testConfig({ dataDir: dir }) } as never, { TV_IP: "127.0.0.1", TV_IR_PHONE: "phone1", TV_ADB_PATH: fakeAdb(dir, "x") }, { sendIr: async (_adb, serial) => void irs.push(serial), awake: async () => true });
+    const res = await app.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } });
+    assert.equal(res.statusCode, 503); // the ordinary key, which this test TV cannot take; no infrared
+    assert.equal(irs.length, 0);
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("sends the infrared switch once, then waits for the TV instead of switching it off again", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ir-"));
+    let clock = 1_000_000;
+    let fail = true;
+    let sent = 0;
+    const app = Fastify();
+    tvRoutes(app, { cfg: testConfig({ dataDir: dir }) } as never, { TV_IP: "127.0.0.1", TV_IR_PHONE: "phone1", TV_ADB_PATH: fakeAdb(dir, "x") }, {
+      sendIr: async () => {
+        if (fail) throw new Error("phone unplugged");
+        sent++;
+      },
+      awake: async () => false,
+      now: () => clock,
+    });
+    const press = async () => app.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } });
+    assert.equal((await press()).statusCode, 500); // nothing was sent, so nothing to wait for
+    fail = false;
+    assert.deepEqual((await press()).json(), { ok: true, woke: true });
+    clock += 5000;
+    assert.deepEqual((await press()).json(), { ok: true, woke: true, waiting: true });
+    assert.equal(sent, 1);
+    clock += WAKE_COOLDOWN_MS;
+    assert.deepEqual((await press()).json(), { ok: true, woke: true }); // it never came up: try again
+    assert.equal(sent, 2);
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("is the TV on the network", () => {
+  it("answers yes to a connection or a refusal, no to silence", async () => {
+    const server = createServer().listen(0, "127.0.0.1");
+    await new Promise((r) => server.once("listening", r));
+    const port = (server.address() as { port: number }).port;
+    assert.equal(await isAwake("127.0.0.1", port), true);
+    server.close();
+    await new Promise((r) => server.once("close", r));
+    assert.equal(await isAwake("127.0.0.1", port), true); // refused at once: the machine is up
+    assert.equal(await isAwake("192.0.2.1", 6466, 300), false); // a documentation address: nobody answers
   });
 });

@@ -57,7 +57,7 @@ describe("wake-on-LAN", () => {
     const sent: string[][] = [];
     const dir = mkdtempSync(join(tmpdir(), "wol-"));
     const app = Fastify();
-    tvRoutes(app, { cfg: testConfig({ dataDir: dir }) } as never, { TV_IP: "127.0.0.1", TV_MAC: "d0:76:02:eb:6c:b9" }, async (macs) => void sent.push(macs));
+    tvRoutes(app, { cfg: testConfig({ dataDir: dir }) } as never, { TV_IP: "127.0.0.1", TV_MAC: "d0:76:02:eb:6c:b9" }, { sendWake: async (macs) => void sent.push(macs), awake: async () => false });
     const status = (await app.inject({ url: "/api/tv" })).json();
     assert.equal(status.wake, true);
     const res = await app.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } });
