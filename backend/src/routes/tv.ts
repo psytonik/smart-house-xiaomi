@@ -11,8 +11,12 @@ import { broadcastsFor, parseMacs, wake } from "../wol.js";
 /** How long Power is not sent again after a wake-up: the infrared key is a switch, and a TV takes about half a minute to answer. */
 export const WAKE_COOLDOWN_MS = 45_000;
 
-/** The TV answers within about ten seconds of a frame it took; after this long without an answer the frame is sent again (a frame is sometimes missed), this many times. */
+/**
+ * The TV answers within about ten seconds of a frame it took; after this long without an answer the frame is sent again (a frame is sometimes
+ * missed), this many times. Meanwhile the TV is asked every WAKE_POLL_MS: a sleeping TV seems to wake more readily while something talks to it.
+ */
 export const WAKE_RETRY_MS = 20_000;
+export const WAKE_POLL_MS = 1000;
 export const WAKE_RETRIES = 3;
 
 /** The parts of the wake-up that tests replace. */
@@ -167,14 +171,18 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
   );
   app.post("/api/tv/pair/cancel", () => guarded(() => need().cancelPairing()));
 
-  // A frame is sometimes missed by the sleeping TV. If it still does not answer after a while, send it again: a TV that is not answering
-  // cannot be switched off by it. The TV that did take it answers well before the first retry.
+  // A frame is sometimes missed by the sleeping TV. Ask the TV every second after one; if it still does not answer after a while, send the frame
+  // again: a TV that is not answering cannot be switched off by it. The TV that did take it answers well before the first retry.
   const retryWake = () => {
     if (!irReady || !host) return;
     void (async () => {
       for (let i = 0; i < WAKE_RETRIES; i++) {
-        await sleep(WAKE_RETRY_MS);
-        if (closing || (await awake(host, remotePort))) return;
+        // by the clock, not by counting: each check takes a moment of its own
+        const start = now();
+        while (now() - start < WAKE_RETRY_MS) {
+          await sleep(WAKE_POLL_MS);
+          if (closing || (await awake(host, remotePort))) return;
+        }
         try {
           await sendIr(irAdb!, irPhone!);
           app.log.info(`tv infrared wake sent again (${i + 1}): the TV did not answer`);

@@ -6,7 +6,7 @@ import { describe, it } from "node:test";
 import Fastify from "fastify";
 import { createServer } from "node:net";
 import { isAwake } from "../src/awake.js";
-import { tvRoutes, WAKE_COOLDOWN_MS, WAKE_RETRIES, WAKE_RETRY_MS } from "../src/routes/tv.js";
+import { tvRoutes, WAKE_COOLDOWN_MS, WAKE_POLL_MS, WAKE_RETRIES, WAKE_RETRY_MS } from "../src/routes/tv.js";
 import { CARRIER_HZ, rcaTimings, sendIrWake } from "../src/ir.js";
 import { testConfig } from "./helpers.js";
 
@@ -131,37 +131,52 @@ describe("infrared frame", () => {
 });
 
 describe("a missed infrared frame", () => {
-  const setup = (awakeAfter: number) => {
+  const polls = WAKE_RETRY_MS / WAKE_POLL_MS;
+  /** The TV answers from its `up`-th check on (the press itself is the first check). */
+  const setup = (up: number) => {
     const dir = mkdtempSync(join(tmpdir(), "ir-"));
     const waits: number[] = [];
+    let clock = 5_000_000;
     let sent = 0;
     let checks = 0;
     const app = Fastify();
     tvRoutes(app, { cfg: testConfig({ dataDir: dir }) } as never, { TV_IP: "127.0.0.1", TV_IR_PHONE: "phone1", TV_ADB_PATH: fakeAdb(dir, "x") }, {
       sendIr: async () => void sent++,
-      // the first check is the press itself, the next ones are the retries
-      awake: async () => ++checks > awakeAfter,
-      sleep: async (ms) => void waits.push(ms),
+      awake: async () => ++checks >= up,
+      sleep: async (ms) => void ((clock += ms), waits.push(ms)),
+      now: () => clock,
     });
-    return { app, dir, waits, sent: () => sent };
+    return { app, dir, waits, sent: () => sent, checks: () => checks };
   };
-  const settle = () => new Promise((r) => setTimeout(r, 30));
+  const press = (app: ReturnType<typeof Fastify>) => app.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } });
+  const settle = () => new Promise((r) => setTimeout(r, 50));
 
-  it("is sent again when the TV does not answer, up to the limit", async () => {
+  it("is sent again when the TV does not answer, up to the limit, asking the TV every second meanwhile", async () => {
     const t = setup(Infinity);
-    await t.app.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } });
+    await press(t.app);
     await settle();
     assert.equal(t.sent(), 1 + WAKE_RETRIES);
-    assert.deepEqual(t.waits, Array(WAKE_RETRIES).fill(WAKE_RETRY_MS));
+    assert.equal(t.checks(), 1 + WAKE_RETRIES * polls); // the press, then every poll of every window
+    assert.ok(t.waits.every((ms) => ms === WAKE_POLL_MS));
     await t.app.close();
     rmSync(t.dir, { recursive: true, force: true });
   });
 
-  it("is not sent again once the TV answers", async () => {
-    const t = setup(1); // up at the first retry check
-    await t.app.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } });
+  it("stops asking and sending once the TV answers", async () => {
+    const t = setup(8); // up at the seventh poll of the first window
+    await press(t.app);
     await settle();
     assert.equal(t.sent(), 1);
+    assert.equal(t.checks(), 8);
+    await t.app.close();
+    rmSync(t.dir, { recursive: true, force: true });
+  });
+
+  it("sends the second frame only after a whole window without an answer", async () => {
+    const t = setup(polls + 5); // up during the second window
+    await press(t.app);
+    await settle();
+    assert.equal(t.sent(), 2);
     await t.app.close();
     rmSync(t.dir, { recursive: true, force: true });
   });
