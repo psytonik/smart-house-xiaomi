@@ -4,10 +4,11 @@ import { HttpError } from "../go2rtc.js";
 import { TvError, TvRemote } from "../tv.js";
 import { findAdb, TvAdb } from "../tvAdb.js";
 import { APPS, APP_IDS, KEY_NAMES, type TvApp, type TvKey } from "../tv/messages.js";
+import { PHONE_SERIAL, sendIrWake } from "../ir.js";
 import { broadcastsFor, parseMacs, wake } from "../wol.js";
 
 /** A Google TV / Android TV (TCL and others) on the local network, as a remote control. Configured with TV_IP (backend/.env). */
-export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.ProcessEnv = process.env, sendWake: typeof wake = wake): void {
+export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.ProcessEnv = process.env, sendWake: typeof wake = wake, sendIr: typeof sendIrWake = sendIrWake): void {
   let tv: TvRemote | undefined;
   const host = env.TV_IP?.trim();
   if (host) {
@@ -34,6 +35,13 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
   } catch (e) {
     app.log.warn(`tv wake disabled: ${(e as Error).message}`);
   }
+
+  // The surest way to wake it: an infrared frame from the emitter of a phone plugged into this computer (TV_IR_PHONE=adb serial, ir-phone/).
+  const irPhone = env.TV_IR_PHONE?.trim() || undefined;
+  const irAdb = irPhone ? findAdb(env) : undefined;
+  if (irPhone && !PHONE_SERIAL.test(irPhone)) app.log.warn("tv infrared wake disabled: TV_IR_PHONE must be an adb serial");
+  else if (irPhone && !irAdb) app.log.warn("tv infrared wake disabled: adb was not found (install it, or set TV_ADB_PATH)");
+  const irReady = irPhone !== undefined && PHONE_SERIAL.test(irPhone) && irAdb !== undefined;
 
   // The TV's own "Source Choice" menu and its inputs go over ADB (TV_ADB=host:5555): a TCL ignores them on the remote protocol.
   let adb: TvAdb | undefined;
@@ -65,7 +73,7 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
   // an app that opens by its component needs ADB: it is not offered without it
   const apps = APP_IDS.filter((id) => adb || !APPS[id]!.component).map((id) => ({ id, label: APPS[id]!.label }));
 
-  app.get("/api/tv", async () => (tv ? { configured: true, ...tv.status(), apps, adb: adb !== undefined, wake: macs.length > 0 } : { configured: false }));
+  app.get("/api/tv", async () => (tv ? { configured: true, ...tv.status(), apps, adb: adb !== undefined, wake: macs.length > 0 || irReady } : { configured: false }));
 
   // What the TV's Source Choice offers (Home, TV, HDMI 1, HDMI 2, AV, Media Player), found out from the TV itself.
   app.get("/api/tv/sources", async () => {
@@ -142,8 +150,20 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
       // the INPUT key of this app opens the TV's own Source Choice, which only ADB can reach
       if (req.body.key === "input" && adb) return guarded(() => adb!.openSourceMenu());
       // Power while the TV does not answer: it is asleep (or off), so wake it instead of failing
-      if (req.body.key === "power" && macs.length > 0 && host && tv?.status().link !== "ready") {
-        return guarded(() => sendWake(macs, broadcastsFor(host))).then((r) => ({ ...r, woke: true }));
+      if (req.body.key === "power" && (irReady || macs.length > 0) && host && tv?.status().link !== "ready") {
+        return guarded(async () => {
+          // infrared first; the packet is the fallback when the phone is not there
+          if (irReady) {
+            try {
+              await sendIr(irAdb!, irPhone!);
+              return;
+            } catch (e) {
+              app.log.warn(`tv infrared wake failed: ${(e as Error).message}`);
+              if (macs.length === 0) throw e;
+            }
+          }
+          await sendWake(macs, broadcastsFor(host));
+        }).then((r) => ({ ...r, woke: true }));
       }
       return guarded(() => need().press(req.body.key));
     },

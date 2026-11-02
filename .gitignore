@@ -17,3 +17,9 @@ backend/models/
 venv/
 venv-piper/
 .idea/
+
+# Android build of ir-phone
+ir-phone/.gradle/
+ir-phone/build/
+ir-phone/app/build/
+ir-phone/local.properties
