@@ -7,7 +7,8 @@ The backend (`backend/src/ir.ts`) asks it over adb; the phone does the sending.
 
 - Build: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME=~/Library/Android/sdk ./gradlew assembleDebug`
 - Install: `adb -s <serial> install -r app/build/outputs/apk/debug/app-debug.apk`, then open the app once (Android keeps a never-opened package stopped).
-- Set `TV_IR_PHONE=<serial>` in `backend/.env`.
+- Set `TV_IR_PHONE=<serial>` in `backend/.env`. Without a cable: `adb -s <serial> tcpip 5555`, `adb connect <phone ip>:5555`, then `TV_IR_PHONE=<phone ip>:5555` (reserve that address in the router; a reboot of the phone resets this).
+- The app itself has one button, "Turn the TV on", that sends the same frame without the computer (to find where to put the phone).
 - Try it by hand: `adb -s <serial> shell am broadcast -f 32 -n com.psytonik.irwake/.IrReceiver --ei carrier 38400 --es pattern "<comma-separated microseconds>"`;
   the receiver answers `result=1` when it sent, `2` when the phone has no emitter, `3` when the pattern is missing.
 
