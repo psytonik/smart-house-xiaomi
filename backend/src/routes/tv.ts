@@ -13,7 +13,7 @@ export const WAKE_COOLDOWN_MS = 45_000;
 
 /** The TV answers within about ten seconds of a frame it took; after this long without an answer the frame is sent again (a frame is sometimes missed), this many times. */
 export const WAKE_RETRY_MS = 20_000;
-export const WAKE_RETRIES = 2;
+export const WAKE_RETRIES = 3;
 
 /** The parts of the wake-up that tests replace. */
 export interface TvDeps {
