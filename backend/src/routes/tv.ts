@@ -4,9 +4,10 @@ import { HttpError } from "../go2rtc.js";
 import { TvError, TvRemote } from "../tv.js";
 import { findAdb, TvAdb } from "../tvAdb.js";
 import { APPS, APP_IDS, KEY_NAMES, type TvApp, type TvKey } from "../tv/messages.js";
+import { broadcastsFor, parseMacs, wake } from "../wol.js";
 
 /** A Google TV / Android TV (TCL and others) on the local network, as a remote control. Configured with TV_IP (backend/.env). */
-export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.ProcessEnv = process.env): void {
+export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.ProcessEnv = process.env, sendWake: typeof wake = wake): void {
   let tv: TvRemote | undefined;
   const host = env.TV_IP?.trim();
   if (host) {
@@ -24,6 +25,14 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
       app.log.warn(`tv disabled: ${(e as Error).message}`); // a wrong setting is a setup mistake, not a crash
       tv = undefined;
     }
+  }
+
+  // A TV in deep sleep has no network link, so no remote protocol can reach it; a wake-up packet to its address (TV_MAC) can.
+  let macs: string[] = [];
+  try {
+    macs = parseMacs(env.TV_MAC);
+  } catch (e) {
+    app.log.warn(`tv wake disabled: ${(e as Error).message}`);
   }
 
   // The TV's own "Source Choice" menu and its inputs go over ADB (TV_ADB=host:5555): a TCL ignores them on the remote protocol.
@@ -56,7 +65,7 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
   // an app that opens by its component needs ADB: it is not offered without it
   const apps = APP_IDS.filter((id) => adb || !APPS[id]!.component).map((id) => ({ id, label: APPS[id]!.label }));
 
-  app.get("/api/tv", async () => (tv ? { configured: true, ...tv.status(), apps, adb: adb !== undefined } : { configured: false }));
+  app.get("/api/tv", async () => (tv ? { configured: true, ...tv.status(), apps, adb: adb !== undefined, wake: macs.length > 0 } : { configured: false }));
 
   // What the TV's Source Choice offers (Home, TV, HDMI 1, HDMI 2, AV, Media Player), found out from the TV itself.
   app.get("/api/tv/sources", async () => {
@@ -132,6 +141,10 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
     (req) => {
       // the INPUT key of this app opens the TV's own Source Choice, which only ADB can reach
       if (req.body.key === "input" && adb) return guarded(() => adb!.openSourceMenu());
+      // Power while the TV does not answer: it is asleep (or off), so wake it instead of failing
+      if (req.body.key === "power" && macs.length > 0 && host && tv?.status().link !== "ready") {
+        return guarded(() => sendWake(macs, broadcastsFor(host))).then((r) => ({ ...r, woke: true }));
+      }
       return guarded(() => need().press(req.body.key));
     },
   );

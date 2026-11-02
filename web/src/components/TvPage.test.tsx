@@ -52,6 +52,14 @@ describe("TvPage", () => {
     await waitFor(() => expect(api.launchTvApp).toHaveBeenCalledWith("netflix"));
   });
 
+  it("lets Power wake a sleeping TV when the server can send a wake-up packet", async () => {
+    vi.mocked(api.getTv).mockResolvedValue(ready({ link: "offline", powered: undefined, app: undefined, volume: undefined, wake: true }));
+    render(<TvPage onLogout={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Turn the TV on" }));
+    await waitFor(() => expect(api.sendTvKey).toHaveBeenCalledWith("power"));
+    expect(screen.getByText(/Press On to wake it/)).toBeTruthy();
+  });
+
   it("locks the keys while the TV doesn't answer, and says why", async () => {
     vi.mocked(api.getTv).mockResolvedValue(ready({ link: "offline", powered: undefined, app: undefined, volume: undefined }));
     render(<TvPage onLogout={() => {}} />);
@@ -59,7 +67,7 @@ describe("TvPage", () => {
     expect(screen.getByText(/may be off or asleep/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Up" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "YouTube" }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole("button", { name: "Turn the TV off" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Turn the TV on" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("offers On when the screen is off", async () => {

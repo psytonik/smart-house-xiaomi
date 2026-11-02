@@ -129,11 +129,12 @@ function Status({ state, press }: { state: TvState; press: (key: TvKey) => void 
         </p>
         {ready && state.app && <p className="tv-now">Now: {appName(state.app)}</p>}
         {ready && v && <p className="tv-now">{v.muted ? "Muted" : `Volume ${v.level}`}</p>}
-        {!ready && <p className="hint">The TV may be off or asleep. Turn it on with its own remote; this page connects by itself.</p>}
+        {!ready && <p className="hint">{state.wake ? "The TV may be off or asleep. Press On to wake it; this page connects by itself in about half a minute." : "The TV may be off or asleep. Turn it on with its own remote; this page connects by itself."}</p>}
       </div>
-      <button type="button" className="tv-power" onClick={() => press("power")} disabled={!ready} aria-label={state.powered === false ? "Turn the TV on" : "Turn the TV off"}>
+      {/* a sleeping TV cannot take keys, but a wake-up packet reaches it (the server sends one for Power when the TV does not answer) */}
+      <button type="button" className="tv-power" onClick={() => press("power")} disabled={!ready && !state.wake} aria-label={!ready || state.powered === false ? "Turn the TV on" : "Turn the TV off"}>
         <Icon d="M12 3v8M6.3 6.3a8 8 0 1 0 11.4 0" />
-        <span>{state.powered === false ? "On" : "Off"}</span>
+        <span>{!ready || state.powered === false ? "On" : "Off"}</span>
       </button>
     </section>
   );

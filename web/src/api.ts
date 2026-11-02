@@ -548,6 +548,8 @@ export interface TvState {
   apps?: Array<{ id: string; label: string }>;
   /** The TV's own source menu and inputs can be reached (over ADB). */
   adb?: boolean;
+  /** A wake-up packet can reach the sleeping TV (TV_MAC is set): the power button works while it does not answer. */
+  wake?: boolean;
 }
 
 export async function getTv(): Promise<TvState> {
