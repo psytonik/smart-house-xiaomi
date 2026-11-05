@@ -4,7 +4,7 @@ import { createSocket } from "node:dgram";
 export class MiioError extends Error {}
 
 const md5 = (...parts: Buffer[]) => createHash("md5").update(Buffer.concat(parts)).digest();
-const HELLO = Buffer.from("21310020" + "ff".repeat(28), "hex");
+export const HELLO = Buffer.from("21310020" + "ff".repeat(28), "hex");
 
 /**
  * Local Xiaomi "miio" client (UDP 54321). Every call opens its own short-lived socket, says hello to get the

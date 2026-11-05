@@ -2,6 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { FailureLimiter } from "./authLimiter.js";
 import type { Config } from "./config.js";
+import { DeviceStore } from "./devices.js";
 import { ObjectDetector } from "./detect.js";
 import { Go2rtc } from "./go2rtc.js";
 import { CozyLight } from "./light.js";
@@ -27,6 +28,8 @@ export interface AppContext {
   /** Pan/tilt commands go through this one at a time (the camera has a single session). */
   ptzQueue: SerialQueue;
   xiaomi: XiaomiSetup;
+  /** Devices found on the network or typed in (data/devices.json). */
+  devices: DeviceStore;
   light?: CozyLight;
   /** The neural voice, when Piper is set up. */
   tts?: PiperTts;
@@ -50,6 +53,9 @@ export async function createContext(cfg: Config, log: { info: (m: string) => voi
   const detector = cfg.detect.enabled ? await ObjectDetector.load(cfg.detect.modelPath, cfg.detect.minScore, (m) => log.info(m)) : null;
   if (detector) recorder.setDetector(detector);
 
+  const devices = new DeviceStore(cfg.dataDir);
+  await devices.init();
+
   const push = new PushService(cfg, { log: (m) => log.info(m) });
   await push.init();
   push.attach(recorder);
@@ -68,6 +74,7 @@ export async function createContext(cfg: Config, log: { info: (m: string) => voi
     limiter: new FailureLimiter(cfg.authMaxFailures, cfg.authWindowSec * 1000),
     ptzQueue: new SerialQueue(4),
     xiaomi: new XiaomiSetup(cfg),
+    devices,
     tts,
     light: cfg.lightIp ? new CozyLight(cfg.lightIp, cfg.lightPort) : undefined,
     snapshotsDir,
