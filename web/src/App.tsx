@@ -27,10 +27,12 @@ import { Shell } from "./components/Shell";
 import { Login } from "./components/Login";
 import { Player, type Mode, type PlayerState } from "./components/Player";
 import { PrivacyOverlay } from "./components/PrivacyOverlay";
+import { PtzPad } from "./components/PtzPad";
 import { SystemPanel } from "./components/SystemPanel";
 import { TvPage } from "./components/TvPage";
 import { VacuumPage } from "./components/VacuumPage";
 import { useRoute } from "./route";
+import { usePtz } from "./usePtz";
 import { ZoneEditor } from "./components/ZoneEditor";
 
 const MODES: Array<{ id: Mode; label: string; hint: string }> = [
@@ -83,6 +85,9 @@ function Monitor({ onLogout }: { onLogout: () => void }) {
     [onLogout, say],
   );
 
+  const ptz = usePtz(fail, say);
+  const { soon: ptzSoon } = ptz;
+
   const refresh = useCallback(() => listSnapshots().then(setSnapshots).catch(fail), [fail]);
 
   useEffect(() => {
@@ -122,13 +127,14 @@ function Monitor({ onLogout }: { onLogout: () => void }) {
       setAngle((a) => a + (dir === "right" || dir === "up" ? 6 : -6));
       try {
         await move(dir);
+        ptzSoon(); // the camera has just been told to move: look at where it points in a moment
       } catch (e) {
         fail(e);
       } finally {
         moving.current = false;
       }
     },
-    [fail],
+    [fail, ptzSoon],
   );
 
   const capture = useCallback(async () => {
@@ -270,8 +276,23 @@ function Monitor({ onLogout }: { onLogout: () => void }) {
           </section>
 
           <aside className="rail">
-            <JogDial angle={angle} onMove={handleMove} onCapture={capture} capturing={capturing} />
+            <JogDial
+              angle={ptz.position?.known && ptz.position.angle !== undefined ? -(ptz.position.angle - 51) * 3 : angle}
+              onMove={handleMove}
+              onCapture={capture}
+              capturing={capturing}
+            />
             <p className="hint">Hold a side to keep moving. Arrow keys move the camera and C captures.</p>
+            <PtzPad
+              position={ptz.position}
+              places={ptz.places}
+              busy={ptz.busy}
+              onGoto={(a, e) => void ptz.goto(a, e)}
+              onGoPlace={(p) => void ptz.goPlace(p)}
+              onSavePlace={ptz.save}
+              onRemovePlace={(p) => void ptz.remove(p)}
+              onCalibrate={() => void ptz.calibrate()}
+            />
           </aside>
 
           <section className="sheet clips" aria-labelledby="clips-title">

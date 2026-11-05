@@ -34,7 +34,7 @@ const CLAIMS_ACTION = /(включ|выключ|запуст|запуск|пов
 /** What the microphone gives ("Выключи свет.") reads differently to a small model than what people type; make it one plain form. */
 export const plain = (text: string) => text.trim().replace(/[.!?…]+$/u, "").toLowerCase();
 
-const SYSTEM = `Ты голосовой помощник умного дома: камера Xiaomi с поворотом, робот-пылесос, ленты света и телевизор TCL.
+const SYSTEM = `Ты голосовой помощник умного дома: камера Xiaomi с поворотом (умеет запоминать места по имени, например «дверь», «окно», и возвращаться к ним), робот-пылесос, ленты света и телевизор TCL.
 Пользователь говорит по-русски, иногда по-английски (find the robot значит найти пылесос), всегда отвечай по-русски. Его фразу распознал микрофон, так что в ней бывают ошибки в словах: понимай по смыслу.
 Выполняй просьбу инструментами сразу, не переспрашивай, если можно сделать разумно: «включи свет» значит включить все ленты, «выключи звук» и «включи звук» это одно нажатие mute, «громче» и «тише» это кнопки громкости телевизора (две-три штуки), а яркость относится только к свету: «ярче», «темнее», «приглуши».
 Любая просьба про устройства, в том числе вопрос о состоянии, требует вызова инструмента: никогда не отвечай про устройства по памяти и не говори, что сделал, если не вызвал инструмент.
@@ -51,6 +51,26 @@ export const TOOLS: Anthropic.Tool[] = [
     name: "camera_move",
     description: "Повернуть камеру. Один шаг это небольшой поворот; для «сильно» поставь до 5 шагов.",
     input_schema: object({ direction: { type: "string", enum: Object.keys(PTZ_OPERATIONS) }, steps: { type: "integer", minimum: 1, maximum: 5 } }, ["direction"]),
+  },
+  {
+    name: "camera_places",
+    description: "Какие места камера запомнила (например «дверь», «окно»).",
+    input_schema: object({}),
+  },
+  {
+    name: "camera_go_place",
+    description: "Повернуть камеру к запомненному месту по названию, как его называет человек («дверь», «окно»). Это долгое движение, камера идёт шагами.",
+    input_schema: object({ name: { type: "string" } }, ["name"]),
+  },
+  {
+    name: "camera_save_place",
+    description: "Запомнить место, куда камера смотрит сейчас, под именем («дверь»). Такое же имя заменяет старое место.",
+    input_schema: object({ name: { type: "string" } }, ["name"]),
+  },
+  {
+    name: "camera_position",
+    description: "Куда сейчас смотрит камера: положение по горизонтали (pan) и вертикали (tilt), от 1 до 101.",
+    input_schema: object({}),
   },
   {
     name: "lights_list",
@@ -161,6 +181,22 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
   switch (name) {
     case "camera_move":
       return call("POST", "/api/ptz", { direction: input.direction, ...(input.steps ? { steps: input.steps } : {}) });
+    case "camera_places":
+      return call("GET", "/api/ptz/presets");
+    case "camera_position":
+      return call("GET", "/api/ptz/position?refresh=1");
+    case "camera_save_place":
+      return call("POST", "/api/ptz/presets", { name: String(input.name ?? "") });
+    case "camera_go_place": {
+      // The model says the place the way people do ("к двери"); the id is the app's business.
+      const saved = await call("GET", "/api/ptz/presets");
+      if (saved.status >= 400) return saved;
+      const known = (saved.body as { presets?: Array<{ id: string; name: string }> }).presets ?? [];
+      const said = String(input.name ?? "").trim().toLowerCase();
+      const hit = known.find((p) => p.name.toLowerCase() === said) ?? known.find((p) => matchesRoom(said, p.name));
+      if (!hit) return { status: 400, body: { error: `no such place: ${said}`, places: known.map((p) => p.name) } };
+      return call("POST", `/api/ptz/presets/${encodeURIComponent(hit.id)}/go`);
+    }
     case "lights_list":
       return call("GET", "/api/lights");
     case "lights_set": {
@@ -271,7 +307,7 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
 }
 
 /** Tools that change something; the others only look, and are not worth remembering. */
-const DOES = new Set(["camera_move", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
+const DOES = new Set(["camera_move", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
 
 /** Understands one spoken phrase (with the recent turns for context) and does it. */
 export async function runAssistant(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[]; memory?: AssistantMemory }): Promise<AssistantReply> {

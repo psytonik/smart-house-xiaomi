@@ -151,6 +151,54 @@ describe("assistant tools resolve names for the model", () => {
     assert.deepEqual(calls, ["GET /api/vacuum/rooms"]);
   });
 
+  describe("camera places", () => {
+    const places = { presets: [{ id: "pz-1", name: "Дверь", angle: 80, elevation: 40 }, { id: "pz-2", name: "Окно", angle: 20, elevation: 60 }] };
+    const record = (): { calls: Array<[string, string, object | undefined]>; call: ApiCall } => {
+      const calls: Array<[string, string, object | undefined]> = [];
+      const call: ApiCall = async (m, u, b) => (calls.push([m, u, b]), { status: 200, body: u === "/api/ptz/presets" && m === "GET" ? places : { ok: true } });
+      return { calls, call };
+    };
+
+    it("sends the camera to a saved place, found by the name people use", async () => {
+      for (const said of ["дверь", "Дверь", "двери", "к двери"]) {
+        const { calls, call } = record();
+        await runAssistant({ brain: brainFor("camera_go_place", { name: said }), model: "m", call, text: "x" });
+        assert.deepEqual(calls.at(-1), ["POST", "/api/ptz/presets/pz-1/go", undefined], said);
+      }
+    });
+
+    it("names the places that exist when the name is unknown, and moves nothing", async () => {
+      const { calls, call } = record();
+      const out = await runAssistant({ brain: brainFor("camera_go_place", { name: "гараж" }), model: "m", call, text: "x" });
+      assert.equal(out.actions[0]!.ok, false);
+      assert.deepEqual(calls.map((c) => c[0] + " " + c[1]), ["GET /api/ptz/presets"]);
+    });
+
+    it("remembers where the camera points under a name", async () => {
+      const { calls, call } = record();
+      await runAssistant({ brain: brainFor("camera_save_place", { name: "Гараж" }), model: "m", call, text: "x" });
+      assert.deepEqual(calls.at(-1), ["POST", "/api/ptz/presets", { name: "Гараж" }]);
+    });
+
+    it("looks where the camera points, and lists the places", async () => {
+      const a = record();
+      await runAssistant({ brain: brainFor("camera_position", {}), model: "m", call: a.call, text: "x" });
+      assert.deepEqual(a.calls.at(-1), ["GET", "/api/ptz/position?refresh=1", undefined]);
+      const b = record();
+      await runAssistant({ brain: brainFor("camera_places", {}), model: "m", call: b.call, text: "x" });
+      assert.deepEqual(b.calls.at(-1), ["GET", "/api/ptz/presets", undefined]);
+    });
+
+    it("counts going to a place and saving one as things done, but not looking", async () => {
+      const { call } = record();
+      const go = await runAssistant({ brain: brainFor("camera_go_place", { name: "окно" }), model: "m", call, text: "x" });
+      assert.equal(go.actions[0]!.ok, true);
+      assert.equal(go.learnable, true);
+      const look = await runAssistant({ brain: brainFor("camera_position", {}), model: "m", call, text: "x" });
+      assert.equal(look.learnable ?? false, false);
+    });
+  });
+
   it("turns every light on when no lamp is named", async () => {
     const calls: Array<[string, string, object | undefined]> = [];
     const call: ApiCall = async (m, u, b) => (calls.push([m, u, b]), { status: 200, body: u === "/api/lights" ? { lights: [{ id: "wifi" }, { id: "ble" }] } : { ok: true } });
@@ -216,6 +264,10 @@ describe("quick commands (rules, no model)", () => {
     assert.deepEqual(plan("сделай погромче"), [["tv_key", "volumeUp"]]);
     assert.deepEqual(plan("выключи звук"), [["tv_key", "mute"]]);
     assert.deepEqual(plan("открой ютуб"), [["tv_app", "youtube"]]);
+  });
+
+  it("leaves the camera places to the model: only the model knows the names a person gave them", () => {
+    for (const heard of ["поверни камеру к двери", "посмотри на окно", "камера на дверь", "запомни это место как дверь"]) assert.equal(planQuick(plain(heard)), null, heard);
   });
 
   it("hears \"очисти бак\" even as the microphone mangles it", () => {

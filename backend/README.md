@@ -43,6 +43,12 @@ npm run dev            # открой http://localhost:3100 и введи API_TO
 | GET | `/api/snapshots` | список сохранённых снимков, у каждого подписанная ссылка `url` |
 | GET | `/api/snapshots/:name` | файл снимка |
 | GET, PUT | `/api/zones` | зоны движения и скрытые области (`watch` / `ignore` / `privacy`), список целиком |
+| GET | `/api/ptz/position` | куда смотрит камера: `{known, angle, elevation, ageMs}` в шкале 1..101 (влево и вверх: больше); `?refresh=1` спрашивает камеру |
+| POST | `/api/ptz/goto` | `{angle, elevation}`: идти в точку шагами; ответ `{reached, angle, elevation, steps, reason?}` |
+| POST | `/api/ptz/calibrate` | камера объезжает весь диапазон (двигается сама) |
+| GET, POST | `/api/ptz/presets` | запомненные места; POST `{name}` запоминает текущее положение (или `{name, angle, elevation}`) |
+| DELETE | `/api/ptz/presets/:id` | забыть место |
+| POST | `/api/ptz/presets/:id/go` | вернуться в место |
 | GET | `/api/devices` | все устройства дома: из `.env` (только чтение) и из реестра `data/devices.json`; токенов в ответе нет |
 | POST | `/api/devices/scan` | поиск в сети (broadcast Xiaomi и CozyLife) и в аккаунте Xiaomi; одновременно один поиск; ответ: `candidates` с `known`, `seen`, `hasToken`, и `cloud` (`ok`, `not-signed-in`, `unavailable`) |
 | POST | `/api/devices` | добавить найденное: `{key, name?, room?}`; токен берётся из памяти сервера после поиска (не старше 10 минут) |

@@ -687,3 +687,72 @@ export async function removeDevice(id: string): Promise<void> {
   const res = await api(`/api/devices/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(await errorText(res, "Couldn't remove the device"));
 }
+
+// ---------- where the camera points, and saved places ----------
+
+/** The camera's own scale for where it points, on both axes: 1..101, not degrees. Left raises the angle, up raises the elevation. */
+export const PTZ_MIN = 1;
+export const PTZ_MAX = 101;
+
+export interface PtzPosition {
+  known: boolean;
+  angle?: number;
+  elevation?: number;
+}
+
+export interface PtzPlace {
+  id: string;
+  name: string;
+  angle: number;
+  elevation: number;
+}
+
+export interface GotoResult {
+  reached: boolean;
+  angle?: number;
+  elevation?: number;
+  steps: number;
+  reason?: "limit" | "max-steps" | "unknown";
+}
+
+export async function getPtzPosition(refresh = false): Promise<PtzPosition> {
+  const res = await api(`/api/ptz/position${refresh ? "?refresh=1" : ""}`);
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read where the camera points"));
+  return (await res.json()) as PtzPosition;
+}
+
+export async function gotoPtz(angle: number, elevation: number): Promise<GotoResult> {
+  const res = await api("/api/ptz/goto", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ angle, elevation }) });
+  if (!res.ok) throw new Error(await errorText(res, "The camera didn't move"));
+  return (await res.json()) as GotoResult;
+}
+
+export async function listPlaces(): Promise<PtzPlace[]> {
+  const res = await api("/api/ptz/presets");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the saved places"));
+  return ((await res.json()) as { presets: PtzPlace[] }).presets;
+}
+
+/** Saves the place the camera points at now under a name (the same name replaces the old place). */
+export async function savePlace(name: string): Promise<PtzPlace> {
+  const res = await api("/api/ptz/presets", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ name }) });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't save the place"));
+  return (await res.json()) as PtzPlace;
+}
+
+export async function removePlace(id: string): Promise<void> {
+  const res = await api(`/api/ptz/presets/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't remove the place"));
+}
+
+export async function goPlace(id: string): Promise<GotoResult> {
+  const res = await api(`/api/ptz/presets/${id}/go`, { method: "POST" });
+  if (!res.ok) throw new Error(await errorText(res, "The camera didn't move"));
+  return (await res.json()) as GotoResult;
+}
+
+/** The camera sweeps its whole range to find the ends. */
+export async function calibrateCamera(): Promise<void> {
+  const res = await api("/api/ptz/calibrate", { method: "POST" });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't calibrate the camera"));
+}

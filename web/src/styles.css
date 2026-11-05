@@ -2416,3 +2416,123 @@ button:disabled {
   border-radius: 12px;
   padding: 16px;
 }
+
+/* ---------- camera position and saved places ---------- */
+.ptz {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+}
+.ptz-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0;
+}
+.ptz-readout {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.ptz-pad {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  padding: 0;
+  cursor: crosshair;
+  background-color: var(--ink);
+  /* quarter lines, so the map reads as a range and not as an empty box */
+  background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 25% 25%;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.ptz-pad:disabled {
+  cursor: progress;
+}
+.ptz-dot,
+.ptz-spot {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.ptz-dot {
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  background: var(--focus);
+  box-shadow: 0 0 0 5px rgba(157, 178, 255, 0.25);
+  transition: left 0.3s ease-out, top 0.3s ease-out;
+}
+.ptz-spot {
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border: 2px solid var(--muted);
+  border-radius: 2px;
+  transform: rotate(45deg);
+}
+.ptz-status {
+  margin: 0;
+  min-height: 1.4em;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.ptz-places {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ptz-places .hint {
+  margin: 0;
+}
+.ptz-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.ptz-place button {
+  min-height: 44px;
+  min-width: 44px;
+}
+.ptz-place .danger {
+  border-color: #6b3531;
+  background: #2a1b1d;
+  color: #ffb3ad;
+}
+.ptz-save {
+  display: grid;
+  gap: 8px;
+}
+.ptz-save label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.ptz-save input {
+  font: inherit;
+  color: var(--text);
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+}
+.ptz-save button,
+.ptz-calibrate button,
+.ptz > .quiet {
+  min-height: 44px;
+}
+.ptz-calibrate .hint {
+  max-width: none;
+  margin: 0 0 8px;
+}
+.ptz-calibrate-actions {
+  display: flex;
+  gap: 8px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ptz-dot {
+    transition: none;
+  }
+}
