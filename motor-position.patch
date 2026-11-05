@@ -178,10 +178,10 @@ index b623b55..e2e5721 100644
  	return c.WriteCommand(data)
 diff --git a/pkg/xiaomi/miss/motor.go b/pkg/xiaomi/miss/motor.go
 new file mode 100644
-index 0000000..57c1660
+index 0000000..b44b3ff
 --- /dev/null
 +++ b/pkg/xiaomi/miss/motor.go
-@@ -0,0 +1,221 @@
+@@ -0,0 +1,227 @@
 +package miss
 +
 +import (
@@ -191,6 +191,7 @@ index 0000000..57c1660
 +	"errors"
 +	"fmt"
 +	"math"
++	"math/bits"
 +	"strconv"
 +	"strings"
 +	"sync"
@@ -293,7 +294,10 @@ index 0000000..57c1660
 +	return st, nil
 +}
 +
-+// MotorTo moves the camera to a position (both values MotorMin..MotorMax).
++// MotorTo moves the camera to a position (both values MotorMin..MotorMax), with the one-command "go to" of the Mi Home plugin.
++// The plugin sends it only to the Xiaomi-brand cameras (c01a01, c01a02); the chuangmi models take another path (RDT).
++// Tried on chuangmi.camera.029a02 (2026-11-05): the camera takes the command without an error, does not answer and does not move.
++// To reach a position on such a camera, send steps and read the position after each one.
 +func (c *Client) MotorTo(angle, elevation int) error {
 +	if angle < MotorMin || angle > MotorMax || elevation < MotorMin || elevation > MotorMax {
 +		return fmt.Errorf("miss: motor: angle and elevation must be %d..%d", MotorMin, MotorMax)
@@ -322,7 +326,9 @@ index 0000000..57c1660
 +
 +func (c *Client) handleCommand(outer uint32, data []byte) {
 +	inner, body := outer, data
-+	if outer == cmdEncoded {
++	// The transport reads the command id little endian, the camera sends it big endian: an encrypted answer arrives
++	// as 0x01100000, which is 0x1001 with its bytes swapped. Accept both.
++	if outer == cmdEncoded || bits.ReverseBytes32(outer) == cmdEncoded {
 +		if len(data) < 8+4 {
 +			c.logCommand(outer, 0, data)
 +			return
@@ -405,10 +411,10 @@ index 0000000..57c1660
 +}
 diff --git a/pkg/xiaomi/miss/motor_test.go b/pkg/xiaomi/miss/motor_test.go
 new file mode 100644
-index 0000000..1441dc2
+index 0000000..4c67215
 --- /dev/null
 +++ b/pkg/xiaomi/miss/motor_test.go
-@@ -0,0 +1,256 @@
+@@ -0,0 +1,261 @@
 +package miss
 +
 +import (
@@ -539,6 +545,11 @@ index 0000000..1441dc2
 +		cases["encoded, id big endian"] = encodedReply(t, true, cmdMotorRes, `{"angle":40,"elevation":60,"ret":0}`)
 +		cases["encoded, id little endian"] = encodedReply(t, false, cmdMotorRes, `{"angle":40,"elevation":60,"ret":0}`)
 +		cases["plain"] = fakeCmd{cmd: cmdMotorRes, data: []byte(`{"angle":40,"elevation":60,"ret":0}`)}
++		// What a real camera does (seen on the wire on 2026-11-05): the outer id arrives as 0x01100000, that is 0x1001
++		// with its bytes the other way round, because the transport reads the id little endian and the camera sends it big endian.
++		real := encodedReply(t, true, cmdMotorRes, `{"angle":40,"elevation":60,"ret":0}`)
++		real.cmd = 0x01100000
++		cases["encoded, outer id as the real camera sends it"] = real
 +	})
 +	for name, cmd := range cases {
 +		t.Run(name, func(t *testing.T) {
