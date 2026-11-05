@@ -1,0 +1,692 @@
+diff --git a/internal/xiaomi/xiaomi.go b/internal/xiaomi/xiaomi.go
+index 2536cc7..eedaee7 100644
+--- a/internal/xiaomi/xiaomi.go
++++ b/internal/xiaomi/xiaomi.go
+@@ -9,6 +9,7 @@ import (
+ 	"net/url"
+ 	"strings"
+ 	"sync"
++	"time"
+ 
+ 	"github.com/AlexxIT/go2rtc/internal/api"
+ 	"github.com/AlexxIT/go2rtc/internal/app"
+@@ -16,6 +17,7 @@ import (
+ 	"github.com/AlexxIT/go2rtc/pkg/core"
+ 	"github.com/AlexxIT/go2rtc/pkg/xiaomi"
+ 	"github.com/AlexxIT/go2rtc/pkg/xiaomi/crypto"
++	"github.com/AlexxIT/go2rtc/pkg/xiaomi/miss"
+ 	"github.com/rs/zerolog"
+ )
+ 
+@@ -51,40 +53,107 @@ func Init() {
+ 	api.HandleFunc("api/xiaomi/motor", apiMotor)
+ }
+ 
+-// Motorer is a source that can move its camera one pan/tilt step.
++// Motorer is a source that can move its camera and say where it points.
+ type Motorer interface {
+ 	Motor(operation int) error
++	MotorTo(angle, elevation int) error
++	MotorQuery(timeout time.Duration) (miss.MotorState, error)
++	MotorPosition() miss.MotorState
++	Calibrate() error
+ }
+ 
+-// Motor moves the camera behind stream `name` one step. It uses the session the
+-// stream already holds, so the stream must be running (someone consuming it).
+-func Motor(name string, operation int) error {
++// motorOf finds the camera behind stream `name`. It uses the session the stream already holds, so the stream must be
++// running (someone consuming it).
++func motorOf(name string) (Motorer, error) {
+ 	stream := streams.Get(name)
+ 	if stream == nil {
+-		return fmt.Errorf("xiaomi: motor: no stream %q", name)
++		return nil, fmt.Errorf("xiaomi: motor: no stream %q", name)
+ 	}
+ 	for _, conn := range stream.Conns() {
+ 		if m, ok := conn.(Motorer); ok {
+-			return m.Motor(operation)
++			return m, nil
+ 		}
+ 	}
+-	return fmt.Errorf("xiaomi: motor: stream %q has no connected source with a motor", name)
++	return nil, fmt.Errorf("xiaomi: motor: stream %q has no connected source with a motor", name)
+ }
+ 
+-// apiMotor: POST /api/xiaomi/motor?src=<stream>&operation=<1 left|2 right|3 up|4 down>
+-func apiMotor(w http.ResponseWriter, r *http.Request) {
+-	if r.Method != "POST" {
+-		http.Error(w, "POST only", http.StatusMethodNotAllowed)
+-		return
++// Motor moves the camera behind stream `name` one step.
++func Motor(name string, operation int) error {
++	m, err := motorOf(name)
++	if err != nil {
++		return err
++	}
++	return m.Motor(operation)
++}
++
++type motorJSON struct {
++	Known     bool   `json:"known"`
++	Angle     int    `json:"angle"`
++	Elevation int    `json:"elevation"`
++	Ret       int    `json:"ret"`
++	AgeMs     int64  `json:"ageMs"`
++	Seq       uint64 `json:"seq"`
++}
++
++func motorReply(w http.ResponseWriter, st miss.MotorState) {
++	out := motorJSON{Known: st.Known, Angle: st.Angle, Elevation: st.Elevation, Ret: st.Ret, Seq: st.Seq}
++	if st.Known {
++		out.AgeMs = time.Since(st.At).Milliseconds()
+ 	}
++	w.Header().Set("Content-Type", "application/json")
++	_ = json.NewEncoder(w).Encode(out)
++}
++
++// apiMotor:
++//
++//	GET  /api/xiaomi/motor?src=<stream>[&refresh=1]                       where the camera points (refresh=1 asks the camera first)
++//	POST /api/xiaomi/motor?src=<stream>&operation=<1 left|2 right|3 up|4 down|5 calibrate>
++//	POST /api/xiaomi/motor?src=<stream>&angle=<1..101>&elevation=<1..101>   move to a position
++func apiMotor(w http.ResponseWriter, r *http.Request) {
+ 	query := r.URL.Query()
+-	var op int
+-	if _, err := fmt.Sscan(query.Get("operation"), &op); err != nil || op < 1 || op > 4 {
+-		http.Error(w, "operation must be 1 (left), 2 (right), 3 (up) or 4 (down)", http.StatusBadRequest)
++	m, err := motorOf(query.Get("src"))
++	if err != nil {
++		http.Error(w, err.Error(), http.StatusNotFound)
+ 		return
+ 	}
+-	if err := Motor(query.Get("src"), op); err != nil {
+-		http.Error(w, err.Error(), http.StatusNotFound)
++	switch r.Method {
++	case "GET":
++		if query.Get("refresh") == "1" {
++			st, err := m.MotorQuery(2 * time.Second)
++			if err != nil {
++				http.Error(w, err.Error(), http.StatusGatewayTimeout)
++				return
++			}
++			motorReply(w, st)
++			return
++		}
++		motorReply(w, m.MotorPosition())
++	case "POST":
++		if query.Has("angle") || query.Has("elevation") {
++			var angle, elevation int
++			if _, err := fmt.Sscan(query.Get("angle"), &angle); err != nil {
++				http.Error(w, "angle must be a number", http.StatusBadRequest)
++				return
++			}
++			if _, err := fmt.Sscan(query.Get("elevation"), &elevation); err != nil {
++				http.Error(w, "elevation must be a number", http.StatusBadRequest)
++				return
++			}
++			if err := m.MotorTo(angle, elevation); err != nil {
++				http.Error(w, err.Error(), http.StatusBadRequest)
++			}
++			return
++		}
++		var op int
++		if _, err := fmt.Sscan(query.Get("operation"), &op); err != nil || op < miss.MotorLeft || op > miss.MotorCalibrate {
++			http.Error(w, "operation must be 1 (left), 2 (right), 3 (up), 4 (down) or 5 (calibrate)", http.StatusBadRequest)
++			return
++		}
++		if err := m.Motor(op); err != nil {
++			http.Error(w, err.Error(), http.StatusNotFound)
++		}
++	default:
++		http.Error(w, "GET or POST only", http.StatusMethodNotAllowed)
+ 	}
+ }
+ 
+diff --git a/pkg/xiaomi/miss/client.go b/pkg/xiaomi/miss/client.go
+index b623b55..e2e5721 100644
+--- a/pkg/xiaomi/miss/client.go
++++ b/pkg/xiaomi/miss/client.go
+@@ -72,13 +72,17 @@ func NewClient(rawURL string) (*Client, error) {
+ 		return nil, err
+ 	}
+ 
+-	return &Client{Conn: conn, key: key, model: model}, nil
++	c := &Client{Conn: conn, key: key, model: model}
++	c.startCommandReader()
++	return c, nil
+ }
+ 
+ type Client struct {
+ 	Conn
+ 	key   []byte
+ 	model string
++
++	motor motorTracker
+ }
+ 
+ const (
+@@ -196,6 +200,9 @@ func (c *Client) StartMedia(channel, quality, audio string) error {
+ // Motor moves a pan/tilt camera one step, the same way the Mi Home app does:
+ // operation 1 - left, 2 - right, 3 - up, 4 - down.
+ func (c *Client) Motor(operation int) error {
++	if operation < MotorLeft || operation > MotorGet {
++		return fmt.Errorf("miss: motor: operation must be %d..%d", MotorLeft, MotorGet)
++	}
+ 	data := binary.BigEndian.AppendUint32(nil, cmdMotorReq)
+ 	data = fmt.Appendf(data, `{"operation":%d}`, operation)
+ 	return c.WriteCommand(data)
+diff --git a/pkg/xiaomi/miss/motor.go b/pkg/xiaomi/miss/motor.go
+new file mode 100644
+index 0000000..57c1660
+--- /dev/null
++++ b/pkg/xiaomi/miss/motor.go
+@@ -0,0 +1,221 @@
++package miss
++
++import (
++	"bytes"
++	"encoding/binary"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"math"
++	"strconv"
++	"strings"
++	"sync"
++	"time"
++
++	"github.com/AlexxIT/go2rtc/pkg/xiaomi/crypto"
++)
++
++// Motor operations, as the Mi Home camera plugin sends them (MISS_CMD_MOTOR_REQ).
++const (
++	MotorLeft      = 1
++	MotorRight     = 2
++	MotorUp        = 3
++	MotorDown      = 4
++	MotorCalibrate = 5  // the camera sweeps its whole range to find the ends
++	MotorGet       = 6  // ask where the camera points now
++	motorGoto      = 13 // move to an angle and elevation
++)
++
++// Position limits the Mi Home plugin works with, on both axes. The camera answers in the same scale (not degrees).
++const (
++	MotorMin = 1
++	MotorMax = 101
++)
++
++// MotorState is where the camera last said it points.
++type MotorState struct {
++	Angle     int // left-right, MotorMin..MotorMax
++	Elevation int // up-down, MotorMin..MotorMax
++	Ret       int // the camera's result code, 0 is success
++	Known     bool
++	Seq       uint64 // grows with every answer
++	At        time.Time
++}
++
++type motorTracker struct {
++	mu      sync.Mutex
++	state   MotorState
++	changed chan struct{}
++	logged  int
++}
++
++func (m *motorTracker) set(angle, elevation, ret int) {
++	m.mu.Lock()
++	m.state = MotorState{Angle: angle, Elevation: elevation, Ret: ret, Known: true, Seq: m.state.Seq + 1, At: time.Now()}
++	if m.changed != nil {
++		close(m.changed)
++	}
++	m.changed = make(chan struct{})
++	m.mu.Unlock()
++}
++
++func (m *motorTracker) get() MotorState {
++	m.mu.Lock()
++	defer m.mu.Unlock()
++	return m.state
++}
++
++// wait blocks until an answer newer than `after` has arrived, or the time is up.
++func (m *motorTracker) wait(after uint64, timeout time.Duration) (MotorState, bool) {
++	deadline := time.NewTimer(timeout)
++	defer deadline.Stop()
++	for {
++		m.mu.Lock()
++		if m.state.Seq > after {
++			st := m.state
++			m.mu.Unlock()
++			return st, true
++		}
++		if m.changed == nil {
++			m.changed = make(chan struct{})
++		}
++		ch := m.changed
++		m.mu.Unlock()
++		select {
++		case <-ch:
++		case <-deadline.C:
++			return m.get(), false
++		}
++	}
++}
++
++// MotorPosition is the last position the camera reported (Known is false until it has reported one).
++func (c *Client) MotorPosition() MotorState { return c.motor.get() }
++
++func (c *Client) waitMotor(after uint64, timeout time.Duration) (MotorState, bool) {
++	return c.motor.wait(after, timeout)
++}
++
++// MotorQuery asks the camera where it points and waits for the answer.
++func (c *Client) MotorQuery(timeout time.Duration) (MotorState, error) {
++	before := c.motor.get().Seq
++	if err := c.Motor(MotorGet); err != nil {
++		return MotorState{}, err
++	}
++	st, ok := c.motor.wait(before, timeout)
++	if !ok {
++		return st, errors.New("miss: motor: the camera did not answer")
++	}
++	return st, nil
++}
++
++// MotorTo moves the camera to a position (both values MotorMin..MotorMax).
++func (c *Client) MotorTo(angle, elevation int) error {
++	if angle < MotorMin || angle > MotorMax || elevation < MotorMin || elevation > MotorMax {
++		return fmt.Errorf("miss: motor: angle and elevation must be %d..%d", MotorMin, MotorMax)
++	}
++	data := binary.BigEndian.AppendUint32(nil, cmdMotorReq)
++	data = fmt.Appendf(data, `{"operation":%d,"angle":%d,"elevation":%d}`, motorGoto, angle, elevation)
++	return c.WriteCommand(data)
++}
++
++// Calibrate makes the camera sweep its whole range. It moves visibly and takes a while.
++func (c *Client) Calibrate() error { return c.Motor(MotorCalibrate) }
++
++// startCommandReader reads the camera's answers on the command channel for as long as the connection lives.
++// Nobody else reads it after the login, so the answers used to pile up unread (the channel holds only ten).
++func (c *Client) startCommandReader() { go c.readCommands() }
++
++func (c *Client) readCommands() {
++	for {
++		cmd, data, err := c.Conn.ReadCommand()
++		if err != nil || (cmd == 0 && data == nil) {
++			return // closed
++		}
++		c.handleCommand(cmd, data)
++	}
++}
++
++func (c *Client) handleCommand(outer uint32, data []byte) {
++	inner, body := outer, data
++	if outer == cmdEncoded {
++		if len(data) < 8+4 {
++			c.logCommand(outer, 0, data)
++			return
++		}
++		dec, err := crypto.Decode(data, c.key)
++		if err != nil || len(dec) < 4 {
++			return
++		}
++		// Requests carry the id big endian; accept the answer either way, it is cheap and the camera is not documented.
++		be, le := binary.BigEndian.Uint32(dec), binary.LittleEndian.Uint32(dec)
++		switch {
++		case be == cmdMotorRes || le == cmdMotorRes:
++			inner = cmdMotorRes
++		default:
++			inner = be
++		}
++		body = dec[4:]
++	}
++	c.logCommand(outer, inner, body)
++	if inner != cmdMotorRes {
++		return
++	}
++	if angle, elevation, ret, ok := parseMotorRes(body); ok {
++		c.motor.set(angle, elevation, ret)
++	}
++}
++
++// logCommand prints the first answers the camera sends, so an unknown one can be recognised. Only ids and readable text.
++func (c *Client) logCommand(outer, inner uint32, body []byte) {
++	c.motor.mu.Lock()
++	c.motor.logged++
++	n := c.motor.logged
++	c.motor.mu.Unlock()
++	if n > 40 {
++		return
++	}
++	text := make([]byte, 0, 100)
++	for _, b := range body {
++		if len(text) == cap(text) {
++			break
++		}
++		if b >= 32 && b < 127 {
++			text = append(text, b)
++		} else {
++			text = append(text, '.')
++		}
++	}
++	fmt.Printf("xiaomi: command outer=%#x inner=%#x len=%d %s\n", outer, inner, len(body), text)
++}
++
++// parseMotorRes reads {"angle":..,"elevation":..,"ret":..}. The Mi Home plugin reads the numbers with Number(), so strings
++// are accepted too, and refuses anything outside 0..101, so do we.
++func parseMotorRes(b []byte) (angle, elevation, ret int, ok bool) {
++	b = bytes.Trim(b, "\x00 \t\r\n")
++	var m map[string]any
++	if json.Unmarshal(b, &m) != nil {
++		return 0, 0, 0, false
++	}
++	a, ok1 := intField(m["angle"])
++	e, ok2 := intField(m["elevation"])
++	if !ok1 || !ok2 || a < 0 || a > MotorMax || e < 0 || e > MotorMax {
++		return 0, 0, 0, false
++	}
++	r, _ := intField(m["ret"])
++	return a, e, r, true
++}
++
++func intField(v any) (int, bool) {
++	switch x := v.(type) {
++	case float64:
++		if x != math.Trunc(x) || math.IsInf(x, 0) || math.IsNaN(x) {
++			return 0, false
++		}
++		return int(x), true
++	case string:
++		n, err := strconv.Atoi(strings.TrimSpace(x))
++		return n, err == nil
++	}
++	return 0, false
++}
+diff --git a/pkg/xiaomi/miss/motor_test.go b/pkg/xiaomi/miss/motor_test.go
+new file mode 100644
+index 0000000..1441dc2
+--- /dev/null
++++ b/pkg/xiaomi/miss/motor_test.go
+@@ -0,0 +1,256 @@
++package miss
++
++import (
++	"encoding/binary"
++	"errors"
++	"net"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/AlexxIT/go2rtc/pkg/xiaomi/crypto"
++)
++
++var testKey = []byte("0123456789abcdef0123456789abcdef")
++
++// fakeConn is a camera that answers on the command channel.
++type fakeConn struct {
++	in     chan fakeCmd // what ReadCommand returns
++	mu     sync.Mutex
++	writes [][]byte // decrypted inner payloads of what the client wrote (cmd id + body)
++	onSend func(inner uint32, body []byte)
++}
++
++type fakeCmd struct {
++	cmd  uint32
++	data []byte
++	err  error
++}
++
++func newFakeConn() *fakeConn { return &fakeConn{in: make(chan fakeCmd, 16)} }
++
++func (f *fakeConn) Protocol() string { return "fake" }
++func (f *fakeConn) Version() string  { return "fake" }
++func (f *fakeConn) ReadCommand() (uint32, []byte, error) {
++	c, ok := <-f.in
++	if !ok {
++		return 0, nil, errors.New("closed")
++	}
++	return c.cmd, c.data, c.err
++}
++func (f *fakeConn) WriteCommand(cmd uint32, data []byte) error {
++	dec, err := crypto.Decode(data, testKey)
++	if err != nil {
++		return err
++	}
++	f.mu.Lock()
++	f.writes = append(f.writes, dec)
++	hook := f.onSend
++	f.mu.Unlock()
++	if hook != nil {
++		hook(binary.BigEndian.Uint32(dec), dec[4:])
++	}
++	return nil
++}
++func (f *fakeConn) ReadPacket() ([]byte, []byte, error)   { select {} }
++func (f *fakeConn) WritePacket(hdr, payload []byte) error { return nil }
++func (f *fakeConn) RemoteAddr() net.Addr                  { return &net.UDPAddr{} }
++func (f *fakeConn) SetDeadline(t time.Time) error         { return nil }
++func (f *fakeConn) Close() error                          { close(f.in); return nil }
++
++func (f *fakeConn) lastWrite(t *testing.T) (uint32, string) {
++	t.Helper()
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	if len(f.writes) == 0 {
++		t.Fatal("nothing was written")
++	}
++	w := f.writes[len(f.writes)-1]
++	return binary.BigEndian.Uint32(w), string(w[4:])
++}
++
++// encodedReply is what the camera sends: the command id and JSON, encrypted, under the "encoded" command.
++func encodedReply(t *testing.T, bigEndian bool, inner uint32, body string) fakeCmd {
++	t.Helper()
++	var buf []byte
++	if bigEndian {
++		buf = binary.BigEndian.AppendUint32(nil, inner)
++	} else {
++		buf = binary.LittleEndian.AppendUint32(nil, inner)
++	}
++	enc, err := crypto.Encode(append(buf, body...), testKey)
++	if err != nil {
++		t.Fatal(err)
++	}
++	return fakeCmd{cmd: cmdEncoded, data: enc}
++}
++
++func newTestClient(f *fakeConn) *Client {
++	c := &Client{Conn: f, key: testKey}
++	c.startCommandReader()
++	return c
++}
++
++func TestParseMotorRes(t *testing.T) {
++	tests := []struct {
++		name    string
++		in      string
++		a, e, r int
++		ok      bool
++	}{
++		{"numbers", `{"angle":50,"elevation":51,"ret":0}`, 50, 51, 0, true},
++		{"strings, the app reads them with Number()", `{"angle":"12","elevation":"101","ret":"0"}`, 12, 101, 0, true},
++		{"no ret", `{"angle":1,"elevation":1}`, 1, 1, 0, true},
++		{"trailing NUL", "{\"angle\":7,\"elevation\":8}\x00", 7, 8, 0, true},
++		{"surrounding spaces", " \n{\"angle\":7,\"elevation\":8} ", 7, 8, 0, true},
++		{"zero is allowed (the app only refuses below 0 and above 101)", `{"angle":0,"elevation":0}`, 0, 0, 0, true},
++		{"angle too big", `{"angle":102,"elevation":50}`, 0, 0, 0, false},
++		{"elevation negative", `{"angle":50,"elevation":-1}`, 0, 0, 0, false},
++		{"missing elevation", `{"angle":50}`, 0, 0, 0, false},
++		{"not a number", `{"angle":"left","elevation":50}`, 0, 0, 0, false},
++		{"not json", `hello`, 0, 0, 0, false},
++		{"empty", ``, 0, 0, 0, false},
++		{"fraction", `{"angle":50.5,"elevation":50}`, 0, 0, 0, false},
++	}
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			a, e, r, ok := parseMotorRes([]byte(tt.in))
++			if ok != tt.ok || (ok && (a != tt.a || e != tt.e || r != tt.r)) {
++				t.Fatalf("parseMotorRes(%q) = %d, %d, %d, %v; want %d, %d, %d, %v", tt.in, a, e, r, ok, tt.a, tt.e, tt.r, tt.ok)
++			}
++		})
++	}
++}
++
++func TestReaderRemembersPosition(t *testing.T) {
++	cases := map[string]fakeCmd{}
++	t.Run("setup", func(t *testing.T) {
++		cases["encoded, id big endian"] = encodedReply(t, true, cmdMotorRes, `{"angle":40,"elevation":60,"ret":0}`)
++		cases["encoded, id little endian"] = encodedReply(t, false, cmdMotorRes, `{"angle":40,"elevation":60,"ret":0}`)
++		cases["plain"] = fakeCmd{cmd: cmdMotorRes, data: []byte(`{"angle":40,"elevation":60,"ret":0}`)}
++	})
++	for name, cmd := range cases {
++		t.Run(name, func(t *testing.T) {
++			f := newFakeConn()
++			c := newTestClient(f)
++			if c.MotorPosition().Known {
++				t.Fatal("position must be unknown before any answer")
++			}
++			f.in <- cmd
++			st, ok := c.waitMotor(0, time.Second)
++			if !ok || !st.Known || st.Angle != 40 || st.Elevation != 60 || st.Seq != 1 {
++				t.Fatalf("got %+v ok=%v", st, ok)
++			}
++			if got := c.MotorPosition(); got.Angle != 40 || got.Elevation != 60 || got.At.IsZero() {
++				t.Fatalf("MotorPosition() = %+v", got)
++			}
++		})
++	}
++}
++
++func TestReaderIgnoresWhatIsNotAMotorAnswer(t *testing.T) {
++	f := newFakeConn()
++	c := newTestClient(f)
++	f.in <- encodedReply(t, true, cmdStreamCtrlRes, `{"ret":0}`)
++	f.in <- fakeCmd{cmd: 0x999, data: []byte("junk")}
++	f.in <- fakeCmd{cmd: cmdEncoded, data: []byte{1, 2, 3}}                   // too short to decrypt: must not panic
++	f.in <- encodedReply(t, true, cmdMotorRes, `{"angle":500,"elevation":5}`) // out of range: refused, like the app
++	f.in <- encodedReply(t, true, cmdMotorRes, `{"angle":10,"elevation":20}`) // the one that counts
++	st, ok := c.waitMotor(0, time.Second)
++	if !ok || st.Angle != 10 || st.Elevation != 20 || st.Seq != 1 {
++		t.Fatalf("got %+v ok=%v", st, ok)
++	}
++}
++
++func TestMotorQuerySendsOperation6AndWaitsForTheAnswer(t *testing.T) {
++	f := newFakeConn()
++	f.onSend = func(inner uint32, body []byte) {
++		if inner == cmdMotorReq && string(body) == `{"operation":6}` {
++			f.in <- encodedReply(t, true, cmdMotorRes, `{"angle":33,"elevation":44,"ret":0}`)
++		}
++	}
++	c := newTestClient(f)
++	st, err := c.MotorQuery(time.Second)
++	if err != nil {
++		t.Fatal(err)
++	}
++	if st.Angle != 33 || st.Elevation != 44 {
++		t.Fatalf("got %+v", st)
++	}
++}
++
++func TestMotorQueryIgnoresAnAnswerThatWasAlreadyThere(t *testing.T) {
++	f := newFakeConn()
++	c := newTestClient(f)
++	f.in <- encodedReply(t, true, cmdMotorRes, `{"angle":1,"elevation":1}`) // old answer to some earlier step
++	if _, ok := c.waitMotor(0, time.Second); !ok {
++		t.Fatal("setup: old answer not seen")
++	}
++	f.onSend = func(inner uint32, body []byte) {
++		f.in <- encodedReply(t, true, cmdMotorRes, `{"angle":77,"elevation":88}`)
++	}
++	st, err := c.MotorQuery(time.Second)
++	if err != nil || st.Angle != 77 || st.Elevation != 88 {
++		t.Fatalf("got %+v err=%v: the query must wait for a NEW answer, not return the old one", st, err)
++	}
++}
++
++func TestMotorQueryTimesOut(t *testing.T) {
++	c := newTestClient(newFakeConn())
++	start := time.Now()
++	_, err := c.MotorQuery(80 * time.Millisecond)
++	if err == nil {
++		t.Fatal("want an error when the camera does not answer")
++	}
++	if time.Since(start) > time.Second {
++		t.Fatalf("took %v", time.Since(start))
++	}
++}
++
++func TestMotorToSendsTheExactCommandAndChecksTheRange(t *testing.T) {
++	f := newFakeConn()
++	c := newTestClient(f)
++	if err := c.MotorTo(50, 51); err != nil {
++		t.Fatal(err)
++	}
++	if id, body := f.lastWrite(t); id != cmdMotorReq || body != `{"operation":13,"angle":50,"elevation":51}` {
++		t.Fatalf("wrote %#x %s", id, body)
++	}
++	for _, bad := range [][2]int{{0, 50}, {50, 0}, {102, 50}, {50, 102}, {-5, 50}} {
++		if err := c.MotorTo(bad[0], bad[1]); err == nil {
++			t.Errorf("MotorTo(%d, %d) should be refused", bad[0], bad[1])
++		}
++	}
++	if err := c.MotorTo(1, 101); err != nil {
++		t.Errorf("the ends of the range must be allowed: %v", err)
++	}
++}
++
++func TestMotorStepAndCalibrateOperations(t *testing.T) {
++	f := newFakeConn()
++	c := newTestClient(f)
++	for op, want := range map[int]string{1: `{"operation":1}`, 4: `{"operation":4}`, 5: `{"operation":5}`} {
++		if err := c.Motor(op); err != nil {
++			t.Fatal(err)
++		}
++		if id, body := f.lastWrite(t); id != cmdMotorReq || body != want {
++			t.Errorf("operation %d: wrote %#x %s, want %s", op, id, body, want)
++		}
++	}
++	if err := c.Calibrate(); err != nil {
++		t.Fatal(err)
++	}
++	if _, body := f.lastWrite(t); body != `{"operation":5}` {
++		t.Errorf("Calibrate wrote %s", body)
++	}
++}
++
++func TestReaderStopsWhenTheConnectionCloses(t *testing.T) {
++	f := newFakeConn()
++	c := newTestClient(f)
++	_ = f.Close()
++	// No answer can come any more: a query ends with an error instead of hanging.
++	if _, err := c.MotorQuery(100 * time.Millisecond); err == nil {
++		t.Fatal("want an error")
++	}
++}
+diff --git a/pkg/xiaomi/miss/producer.go b/pkg/xiaomi/miss/producer.go
+index e5ba365..daef93a 100644
+--- a/pkg/xiaomi/miss/producer.go
++++ b/pkg/xiaomi/miss/producer.go
+@@ -204,6 +204,20 @@ func (p *Producer) Motor(operation int) error {
+ 	return p.client.Motor(operation)
+ }
+ 
++// MotorPosition is the last position the camera reported.
++func (p *Producer) MotorPosition() MotorState { return p.client.MotorPosition() }
++
++// MotorQuery asks the camera where it points.
++func (p *Producer) MotorQuery(timeout time.Duration) (MotorState, error) {
++	return p.client.MotorQuery(timeout)
++}
++
++// MotorTo moves the camera to a position.
++func (p *Producer) MotorTo(angle, elevation int) error { return p.client.MotorTo(angle, elevation) }
++
++// Calibrate makes the camera sweep its whole range.
++func (p *Producer) Calibrate() error { return p.client.Calibrate() }
++
+ // TimeToRTP convert time in milliseconds to RTP time
+ func TimeToRTP(timeMS, clockRate uint64) uint32 {
+ 	return uint32(timeMS * clockRate / 1000)

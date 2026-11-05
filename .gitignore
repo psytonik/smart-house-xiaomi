@@ -2,6 +2,8 @@
 # go2rtc.yaml may contain Xiaomi account tokens after login
 go2rtc.yaml
 go2rtc-motor
+go2rtc-motor.next
+go2rtc-motor.prev
 src-motor/
 .env
 .env.*

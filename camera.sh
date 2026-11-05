@@ -341,20 +341,25 @@ cmd_motor() {
   curl -s -X POST "$GO2RTC_API/api/xiaomi/motor?src=$STREAM&operation=$op" -w "HTTP %{http_code}\n"
 }
 
-# Builds go2rtc v1.9.15 + three patches: the Xiaomi pan/tilt motor (from go2rtc PR #2531, Xiaomi part only)
+# Builds go2rtc v1.9.15 + four patches: the Xiaomi pan/tilt motor (from go2rtc PR #2531, Xiaomi part only)
 # a Xiaomi transport that drops the oldest packet when the reader is behind, instead of closing the camera connection ("pop buffer is full"),
-# and a one-line fix for sound sent TO the camera over cs2+udp (the packet carried the header twice instead of the sound: the speaker played noise).
+# a one-line fix for sound sent TO the camera over cs2+udp (the packet carried the header twice instead of the sound: the speaker played noise),
+# and the camera's answers to motor commands: where it points, move to a position, calibrate (from the Mi Home camera plugin).
+# `build-motor next` writes go2rtc-motor.next and leaves the working go2rtc-motor alone.
 cmd_build_motor() {
+  local out="go2rtc-motor"
+  [ "${1:-}" = "next" ] && out="go2rtc-motor.next"
   command -v git >/dev/null || die "нужен git"
   command -v go  >/dev/null || die "нужен Go >= 1.26 (brew install go)"
   [ -f motor-xiaomi.patch ] || die "нет motor-xiaomi.patch"
   [ -f cs2-queue.patch ]    || die "нет cs2-queue.patch"
   [ -f cs2-write-payload.patch ] || die "нет cs2-write-payload.patch"
+  [ -f motor-position.patch ]    || die "нет motor-position.patch"
   rm -rf src-motor
   git clone --depth 1 --branch v1.9.15 https://github.com/AlexxIT/go2rtc.git src-motor || die "не удалось скачать go2rtc"
-  (cd src-motor && git apply ../motor-xiaomi.patch ../cs2-queue.patch ../cs2-write-payload.patch && CGO_ENABLED=0 go build -ldflags "-s -w" -trimpath -o ../go2rtc-motor) || { rm -rf src-motor; die "сборка не удалась"; }
+  (cd src-motor && git apply ../motor-xiaomi.patch ../cs2-queue.patch ../cs2-write-payload.patch ../motor-position.patch && CGO_ENABLED=0 go build -ldflags "-s -w" -trimpath -o "../$out") || { rm -rf src-motor; die "сборка не удалась"; }
   rm -rf src-motor
-  say "Собрано: $(pwd)/go2rtc-motor"
+  say "Собрано: $(pwd)/$out"
 }
 
 cmd_fetch_model() {
@@ -413,7 +418,7 @@ case "${1:-start}" in
   status)        cmd_status ;;
   logs)          if [ -f "$LOGS/ble.log" ]; then tail -n 50 -F "$LOGS/go2rtc.log" "$LOGS/backend.log" "$LOGS/ble.log"; else tail -n 50 -F "$LOGS/go2rtc.log" "$LOGS/backend.log"; fi ;;
   motor)         cmd_motor "${2:-}" ;;
-  build-motor)   cmd_build_motor ;;
+  build-motor)   cmd_build_motor "${2:-}" ;;
   fetch-model)   cmd_fetch_model ;;
   label-clips)   cmd_label_clips ;;
   ble-setup)     cmd_ble_setup ;;
