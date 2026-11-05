@@ -182,7 +182,38 @@ export class Go2rtc {
   }
 
   async move(direction: PtzDirection): Promise<void> {
-    const op = String(PTZ_OPERATIONS[direction]);
+    await this.motor(String(PTZ_OPERATIONS[direction]));
+  }
+
+  /** Makes the camera sweep its whole range to find the ends. It moves visibly and takes a while: only on a person's request. */
+  async calibrate(): Promise<void> {
+    await this.motor("5");
+  }
+
+  /**
+   * Where the camera points, in its own scale (1..101 on both axes). `refresh` asks the camera now; without it the answer to the
+   * last move is used. Undefined when the camera has not said (no stream, or no answer in time).
+   */
+  async position(refresh: boolean): Promise<{ angle: number; elevation: number; ageMs: number } | undefined> {
+    this.keeper.ensure();
+    for (let attempt = 0; attempt < this.cfg.warmupAttempts; attempt++) {
+      let res: Response;
+      try {
+        res = await fetch(this.url("/api/xiaomi/motor", refresh ? { refresh: "1" } : {}));
+      } catch {
+        throw new HttpError(502, "go2rtc is unreachable");
+      }
+      if (res.ok) {
+        const b = (await res.json()) as { known?: boolean; angle?: number; elevation?: number; ageMs?: number };
+        return b.known && typeof b.angle === "number" && typeof b.elevation === "number" ? { angle: b.angle, elevation: b.elevation, ageMs: b.ageMs ?? 0 } : undefined;
+      }
+      if (res.status !== 404) return undefined; // 504: the camera did not answer
+      await sleep(this.cfg.warmupPollMs); // the session is not up yet
+    }
+    return undefined;
+  }
+
+  private async motor(op: string): Promise<void> {
     this.keeper.ensure();
 
     let lastError = "";

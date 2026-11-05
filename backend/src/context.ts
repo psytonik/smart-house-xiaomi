@@ -6,6 +6,7 @@ import { DeviceStore } from "./devices.js";
 import { ObjectDetector } from "./detect.js";
 import { Go2rtc } from "./go2rtc.js";
 import { CozyLight } from "./light.js";
+import { PtzPresetStore } from "./ptzPresets.js";
 import { PushService } from "./push.js";
 import { PiperTts } from "./tts.js";
 import { SerialQueue } from "./queue.js";
@@ -28,6 +29,8 @@ export interface AppContext {
   /** Pan/tilt commands go through this one at a time (the camera has a single session). */
   ptzQueue: SerialQueue;
   xiaomi: XiaomiSetup;
+  /** Named camera positions (data/ptz-presets.json). */
+  ptzPresets: PtzPresetStore;
   /** Devices found on the network or typed in (data/devices.json). */
   devices: DeviceStore;
   light?: CozyLight;
@@ -53,6 +56,9 @@ export async function createContext(cfg: Config, log: { info: (m: string) => voi
   const detector = cfg.detect.enabled ? await ObjectDetector.load(cfg.detect.modelPath, cfg.detect.minScore, (m) => log.info(m)) : null;
   if (detector) recorder.setDetector(detector);
 
+  const ptzPresets = new PtzPresetStore(cfg.dataDir);
+  await ptzPresets.init();
+
   const devices = new DeviceStore(cfg.dataDir);
   await devices.init();
 
@@ -75,6 +81,7 @@ export async function createContext(cfg: Config, log: { info: (m: string) => voi
     ptzQueue: new SerialQueue(4),
     xiaomi: new XiaomiSetup(cfg),
     devices,
+    ptzPresets,
     tts,
     light: cfg.lightIp ? new CozyLight(cfg.lightIp, cfg.lightPort) : undefined,
     snapshotsDir,
