@@ -44,6 +44,7 @@
 
 - [`research/cameraui.md`](research/cameraui.md): что умеет camera.ui, что мы взяли и в каком порядке, лицензия, как изучалось.
 - [`research/xiaomi-camera-029a02-miot.md`](research/xiaomi-camera-029a02-miot.md): что описывает MIoT-Spec для нашей камеры, что она отвечает локально и через облако, что отсюда следует.
+- [`research/mi-home-camera-plugin.md`](research/mi-home-camera-plugin.md): что видно в плагине камеры Mi Home: команды поворота (положение, переход в точку, калибровка), качество потока, настройки.
 
 ## Как добавить решение
 
