@@ -43,6 +43,7 @@
 ## Исследования
 
 - [`research/cameraui.md`](research/cameraui.md): что умеет camera.ui, что мы взяли и в каком порядке, лицензия, как изучалось.
+- [`research/xiaomi-camera-029a02-miot.md`](research/xiaomi-camera-029a02-miot.md): что описывает MIoT-Spec для нашей камеры, что она отвечает локально и через облако, что отсюда следует.
 
 ## Как добавить решение
 
