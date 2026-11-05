@@ -45,8 +45,8 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}) {
   // Web app (public shell; all data goes through the token-protected /api).
   if (existsSync(cfg.publicDir)) {
     await app.register(fastifyStatic, { root: cfg.publicDir });
-    // The pages have their own addresses (/vacuum, /lights, /tv); a reload or a bookmark must still get the app.
-    for (const page of ["/vacuum", "/lights", "/tv"]) app.get(page, (_req, reply) => reply.sendFile("index.html"));
+    // The pages have their own addresses (/vacuum, /lights, /tv, /devices); a reload or a bookmark must still get the app.
+    for (const page of ["/vacuum", "/lights", "/tv", "/devices"]) app.get(page, (_req, reply) => reply.sendFile("index.html"));
   }
 
   return app;

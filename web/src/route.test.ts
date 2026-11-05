@@ -6,6 +6,7 @@ describe("parseRoute", () => {
     expect(parseRoute("/vacuum")).toBe("vacuum");
     expect(parseRoute("/lights")).toBe("lights");
     expect(parseRoute("/tv")).toBe("tv");
+    expect(parseRoute("/devices")).toBe("devices");
   });
   it("falls back to the camera", () => {
     expect(parseRoute("")).toBe("camera");

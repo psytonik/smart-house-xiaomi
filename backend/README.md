@@ -43,6 +43,11 @@ npm run dev            # открой http://localhost:3100 и введи API_TO
 | GET | `/api/snapshots` | список сохранённых снимков, у каждого подписанная ссылка `url` |
 | GET | `/api/snapshots/:name` | файл снимка |
 | GET, PUT | `/api/zones` | зоны движения и скрытые области (`watch` / `ignore` / `privacy`), список целиком |
+| GET | `/api/devices` | все устройства дома: из `.env` (только чтение) и из реестра `data/devices.json`; токенов в ответе нет |
+| POST | `/api/devices/scan` | поиск в сети (broadcast Xiaomi и CozyLife) и в аккаунте Xiaomi; одновременно один поиск; ответ: `candidates` с `known`, `seen`, `hasToken`, и `cloud` (`ok`, `not-signed-in`, `unavailable`) |
+| POST | `/api/devices` | добавить найденное: `{key, name?, room?}`; токен берётся из памяти сервера после поиска (не старше 10 минут) |
+| POST | `/api/devices/manual` | добавить вручную: `{kind, protocol, name, host, room?, model?, token?}`; адрес только домашней сети |
+| PATCH, DELETE | `/api/devices/:id` | переименовать (`name`, `room`) или удалить; устройства `env-*` менять нельзя |
 | GET | `/api/push` | `{devices, minIntervalSec}` |
 | POST | `/api/push/register`, `/api/push/unregister` | `{token}` Expo-токена телефона |
 | POST | `/api/push/test` | тестовое уведомление (409, если нет телефонов) |

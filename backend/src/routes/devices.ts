@@ -19,8 +19,11 @@ export function devicesRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS
   let scan: { at: number; byKey: Map<string, Candidate>; cloud: CloudStatus } | undefined;
   let scanning = false;
 
-  const all = (): DeviceView[] => [...envDevices(ctx.cfg, env), ...devices.list().map(viewOf)];
-  const isKnown = (c: { host?: string; did?: string }): boolean => !!devices.find(c) || envDevices(ctx.cfg, env).some((d) => c.host !== undefined && d.host === c.host);
+  // The camera's address lives in go2rtc, not in .env: ask for it, so the search recognises the camera as already there.
+  const fromEnv = async (): Promise<DeviceView[]> => envDevices(ctx.cfg, env, await ctx.xiaomi.cameraIdentity());
+  const all = async (): Promise<DeviceView[]> => [...(await fromEnv()), ...devices.list().map(viewOf)];
+  const isKnown = async (c: { host?: string; did?: string }): Promise<boolean> =>
+    !!devices.find(c) || (await fromEnv()).some((d) => (c.host !== undefined && d.host === c.host) || (c.did !== undefined && d.did === c.did));
   const guard = async <T>(run: () => Promise<T>): Promise<T> => {
     try {
       return await run();
@@ -30,7 +33,7 @@ export function devicesRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS
     }
   };
 
-  app.get("/api/devices", async () => ({ devices: all() }));
+  app.get("/api/devices", async () => ({ devices: await all() }));
 
   // Asks the network (a broadcast) and the Xiaomi account. Only on a press of the button, never on a timer.
   app.post("/api/devices/scan", async () => {
@@ -39,7 +42,7 @@ export function devicesRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS
     try {
       const result = await discover(deps);
       scan = { at: Date.now(), byKey: new Map(result.candidates.map((c) => [c.key, c])), cloud: result.cloud };
-      const candidates: CandidateView[] = result.candidates.map(({ token, ...c }) => ({ ...c, hasToken: token !== undefined, known: isKnown(c) }));
+      const candidates: CandidateView[] = await Promise.all(result.candidates.map(async ({ token, ...c }) => ({ ...c, hasToken: token !== undefined, known: await isKnown(c) })));
       return { candidates, cloud: result.cloud, ...(result.cloudMessage && { cloudMessage: result.cloudMessage }) };
     } finally {
       scanning = false;
@@ -54,7 +57,7 @@ export function devicesRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS
       if (!scan || Date.now() - scan.at > SCAN_TTL_MS) throw new HttpError(409, "search for devices first: the last search is too old or missing");
       const c = scan.byKey.get(req.body.key);
       if (!c) throw new HttpError(404, "that device was not in the last search");
-      if (isKnown(c)) throw new HttpError(409, "that device is already in the list");
+      if (await isKnown(c)) throw new HttpError(409, "that device is already in the list");
       const rec = await guard(() =>
         devices.add({
           kind: c.kind,
@@ -94,7 +97,7 @@ export function devicesRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS
       },
     },
     async (req, reply) => {
-      if (isKnown({ host: req.body.host })) throw new HttpError(409, "a device with this address is already in the list");
+      if (await isKnown({ host: req.body.host })) throw new HttpError(409, "a device with this address is already in the list");
       const rec = await guard(() => devices.add({ ...(req.body as Parameters<typeof devices.add>[0]), origin: "manual" }));
       return reply.code(201).send(viewOf(rec));
     },

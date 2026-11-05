@@ -1,12 +1,13 @@
 import { useEffect, useState, type MouseEvent } from "react";
 
-export type Route = "camera" | "vacuum" | "lights" | "tv";
+export type Route = "camera" | "vacuum" | "lights" | "tv" | "devices";
 
 export const ROUTES: Array<{ id: Route; label: string; href: string }> = [
   { id: "camera", label: "Camera", href: "/" },
   { id: "vacuum", label: "Vacuum", href: "/vacuum" },
   { id: "lights", label: "Lights", href: "/lights" },
   { id: "tv", label: "TV", href: "/tv" },
+  { id: "devices", label: "Devices", href: "/devices" },
 ];
 
 /** Which page an address belongs to. Anything unknown falls back to the camera. */
@@ -14,6 +15,7 @@ export function parseRoute(path: string): Route {
   if (path === "/vacuum") return "vacuum";
   if (path === "/lights") return "lights";
   if (path === "/tv") return "tv";
+  if (path === "/devices") return "devices";
   return "camera";
 }
 
@@ -38,7 +40,7 @@ export function useRoute(): Route {
   const [path, setPath] = useState(() => {
     // Old bookmarks looked like /#/vacuum.
     const old = window.location.hash.replace(/^#/, "");
-    if (old === "/vacuum" || old === "/lights" || old === "/tv") window.history.replaceState(null, "", old);
+    if (old === "/vacuum" || old === "/lights" || old === "/tv" || old === "/devices") window.history.replaceState(null, "", old);
     return window.location.pathname;
   });
   useEffect(() => {

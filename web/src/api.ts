@@ -602,3 +602,88 @@ export const launchTvApp = (app: string) => postTv("app", { app }, "Couldn't ope
 export const startTvPairing = () => postTv("pair", {}, "Couldn't start pairing");
 export const sendTvCode = (code: string) => postTv("pair/code", { code }, "Couldn't pair");
 export const cancelTvPairing = () => postTv("pair/cancel", {}, "Couldn't cancel pairing");
+
+// ---------- devices at home (the registry) ----------
+
+export type DeviceKind = "camera" | "vacuum" | "light" | "tv" | "plug" | "other";
+export type DeviceProtocol = "miio" | "cozylife" | "androidtv" | "go2rtc" | "other";
+
+export interface Device {
+  id: string;
+  kind: DeviceKind;
+  protocol: DeviceProtocol;
+  name: string;
+  room?: string;
+  host?: string;
+  model?: string;
+  /** "env": still set in backend/.env, shown here but changed there. */
+  origin: "env" | "discovered" | "manual";
+  hasToken: boolean;
+  editable: boolean;
+}
+
+/** A device the network search turned up. The token stays on the server. */
+export interface Found {
+  key: string;
+  protocol: DeviceProtocol;
+  kind: DeviceKind;
+  host?: string;
+  name: string;
+  model?: string;
+  /** false: only known from the Xiaomi account, it did not answer on the network just now. */
+  seen: boolean;
+  hasToken: boolean;
+  /** Already in the list. */
+  known: boolean;
+}
+
+export interface ScanResult {
+  candidates: Found[];
+  cloud: "ok" | "not-signed-in" | "unavailable";
+  cloudMessage?: string;
+}
+
+export interface ManualDevice {
+  kind: DeviceKind;
+  protocol: DeviceProtocol;
+  name: string;
+  host: string;
+  room?: string;
+}
+
+const JSON_HEADERS = { "content-type": "application/json" };
+
+export async function getDevices(): Promise<Device[]> {
+  const res = await api("/api/devices");
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't read the devices"));
+  return ((await res.json()) as { devices: Device[] }).devices;
+}
+
+export async function scanDevices(): Promise<ScanResult> {
+  const res = await api("/api/devices/scan", { method: "POST" });
+  if (!res.ok) throw new Error(await errorText(res, "The search failed"));
+  return (await res.json()) as ScanResult;
+}
+
+export async function addFoundDevice(key: string, name: string, room: string): Promise<Device> {
+  const res = await api("/api/devices", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify({ key, name, ...(room && { room }) }) });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't add the device"));
+  return (await res.json()) as Device;
+}
+
+export async function addManualDevice(input: ManualDevice): Promise<Device> {
+  const res = await api("/api/devices/manual", { method: "POST", headers: JSON_HEADERS, body: JSON.stringify(input) });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't add the device"));
+  return (await res.json()) as Device;
+}
+
+export async function updateDevice(id: string, patch: { name?: string; room?: string }): Promise<Device> {
+  const res = await api(`/api/devices/${id}`, { method: "PATCH", headers: JSON_HEADERS, body: JSON.stringify(patch) });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't save the device"));
+  return (await res.json()) as Device;
+}
+
+export async function removeDevice(id: string): Promise<void> {
+  const res = await api(`/api/devices/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await errorText(res, "Couldn't remove the device"));
+}

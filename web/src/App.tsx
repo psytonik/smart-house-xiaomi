@@ -21,6 +21,7 @@ import { Cameras } from "./components/Cameras";
 import { Clips } from "./components/Clips";
 import { Gallery } from "./components/Gallery";
 import { JogDial } from "./components/JogDial";
+import { DevicesPage } from "./components/DevicesPage";
 import { LightsPage } from "./components/LightsPage";
 import { Shell } from "./components/Shell";
 import { Login } from "./components/Login";
@@ -325,6 +326,8 @@ export function App() {
       return <LightsPage onLogout={logout} />;
     case "tv":
       return <TvPage onLogout={logout} />;
+    case "devices":
+      return <DevicesPage onLogout={logout} />;
     default:
       return <Monitor onLogout={logout} />;
   }

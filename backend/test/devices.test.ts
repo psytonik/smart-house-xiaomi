@@ -4,7 +4,10 @@ import { mkdtempSync, rmSync, statSync, writeFileSync, readFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, beforeEach, describe, it } from "node:test";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import Fastify from "fastify";
+import { XiaomiSetup } from "../src/xiaomi.js";
 import type { AppContext } from "../src/context.js";
 import { DeviceError, DeviceStore, envDevices, isPrivateIPv4, parseDevice, parseDevices } from "../src/devices.js";
 import { discover, kindOfModel, scanCozyLife, scanMiio, type DiscoverDeps } from "../src/discovery.js";
@@ -123,6 +126,10 @@ describe("envDevices", () => {
     assert.equal(list.find((d) => d.id === "env-vacuum")?.hasToken, true);
     assert.ok(!JSON.stringify(list).includes(TOKEN));
   });
+  it("shows the camera's address and own id when go2rtc tells them", () => {
+    const cam = envDevices(cfg, {}, { host: "10.0.0.5", did: "938662225" }).find((d) => d.id === "env-camera");
+    assert.deepEqual([cam?.host, cam?.did], ["10.0.0.5", "938662225"]);
+  });
   it("lists only the camera when nothing else is set", () => {
     assert.deepEqual(envDevices({ lightIp: undefined, stream: "cam" }, {}).map((d) => d.id), ["env-camera"]);
   });
@@ -240,7 +247,7 @@ describe("devices API", () => {
     store = new DeviceStore(dir);
     await store.init();
     app = Fastify();
-    const ctx = { cfg: testConfig({ dataDir: dir, lightIp: "10.0.0.1" }), devices: store } as unknown as AppContext;
+    const ctx = { cfg: testConfig({ dataDir: dir, lightIp: "10.0.0.1" }), devices: store, xiaomi: { cameraIdentity: async () => ({ host: "10.0.0.5", did: "222" }) } } as unknown as AppContext;
     devicesRoutes(app, ctx, env, deps({ miio: async () => [{ host: "10.0.0.7", did: "111" }, { host: "10.0.0.30", did: "444" }], cozylife: async () => [{ host: "10.0.0.1", did: "lamp0001" }], cloud: async () => [cloudVacuum] }));
     await app.ready();
   });
@@ -263,6 +270,16 @@ describe("devices API", () => {
     assert.equal(byKey["cozylife:lamp0001"].known, true); // the lamp too
     assert.equal(byKey["miio:444"].known, false);
     assert.equal(byKey["miio:111"].hasToken, true);
+  });
+
+  it("knows the camera is already there, though .env gives no address for it (go2rtc does)", async () => {
+    const dev = Fastify();
+    devicesRoutes(dev, { cfg: testConfig({ dataDir: dir }), devices: store, xiaomi: { cameraIdentity: async () => ({ host: "10.0.0.5", did: "222" }) } } as unknown as AppContext, {}, deps({ miio: async () => [{ host: "10.0.0.5", did: "222" }], cloud: async () => [cloudCamera] }));
+    await dev.ready();
+    const r = (await dev.inject({ method: "POST", url: "/api/devices/scan" })).json();
+    assert.equal(r.candidates[0].known, true);
+    assert.equal((await dev.inject({ url: "/api/devices" })).json().devices[0].host, "10.0.0.5");
+    await dev.close();
   });
 
   it("adds a found device by its key, storing the token the server remembers", async () => {
@@ -309,7 +326,7 @@ describe("devices API", () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     const slow = Fastify();
-    devicesRoutes(slow, { cfg: testConfig({ dataDir: dir }), devices: store } as unknown as AppContext, {}, deps({ miio: async () => (await gate, []) }));
+    devicesRoutes(slow, { cfg: testConfig({ dataDir: dir }), devices: store, xiaomi: { cameraIdentity: async () => ({}) } } as unknown as AppContext, {}, deps({ miio: async () => (await gate, []) }));
     await slow.ready();
     const first = slow.inject({ method: "POST", url: "/api/devices/scan" });
     await new Promise((r) => setTimeout(r, 30));
@@ -317,5 +334,36 @@ describe("devices API", () => {
     release();
     assert.equal((await first).statusCode, 200);
     await slow.close();
+  });
+});
+
+describe("XiaomiSetup.cameraIdentity", () => {
+  async function fakeGo2rtc(body: unknown) {
+    const server = createServer((_req, res) => res.setHeader("content-type", "application/json").end(JSON.stringify(body)));
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    return { url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, close: () => server.close() };
+  }
+  const identity = async (body: unknown) => {
+    const g = await fakeGo2rtc(body);
+    try {
+      return await new XiaomiSetup(testConfig({ dataDir: tmp(), go2rtcUrl: g.url, stream: "cam" })).cameraIdentity();
+    } finally {
+      g.close();
+    }
+  };
+
+  it("takes the camera's address from a running stream (go2rtc lists remote_addr, not the source)", async () => {
+    assert.deepEqual(await identity({ cam: { producers: [{ protocol: "cs2+udp", remote_addr: "10.0.0.5:11577" }] } }), { host: "10.0.0.5" });
+  });
+
+  it("takes the address and the id from the source of a stream that is not connected, and never returns the token", async () => {
+    const got = await identity({ cam: { producers: [{ url: "xiaomi://6674200535:cn@10.0.0.5?did=938662225&model=chuangmi.camera.029a02&token=SECRET" }] } });
+    assert.deepEqual(got, { host: "10.0.0.5", did: "938662225" });
+    assert.ok(!JSON.stringify(got).includes("SECRET"));
+  });
+
+  it("answers with nothing when the stream is missing or go2rtc is down", async () => {
+    assert.deepEqual(await identity({ other: { producers: [] } }), {});
+    assert.deepEqual(await new XiaomiSetup(testConfig({ dataDir: tmp(), go2rtcUrl: "http://127.0.0.1:1" })).cameraIdentity(), {});
   });
 });

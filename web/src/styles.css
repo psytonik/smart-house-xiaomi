@@ -2306,3 +2306,113 @@ button:disabled {
 .voice-remember {
   margin-bottom: 10px;
 }
+
+/* ---------- devices page ---------- */
+.devices-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.devices-head h2 {
+  margin-bottom: 0;
+}
+.hint.wide {
+  max-width: 60ch;
+  margin: 8px 0 12px;
+}
+.devices {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.device {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  min-height: 56px;
+  padding: 10px 12px;
+  background: var(--slate-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.device-main {
+  flex: 1;
+  min-width: 0;
+}
+.device-name {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.device-line {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.device-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.device-actions button {
+  min-height: 44px;
+  min-width: 44px;
+}
+.device-actions .danger {
+  border-color: var(--signal);
+  color: #ffb3ad;
+}
+.device-form {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+}
+.device-form label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.device-form input,
+.device-form select {
+  font: inherit;
+  color: var(--text);
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-height: 44px;
+  padding: 0 12px;
+}
+.devices-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--signal);
+  border-radius: 6px;
+  color: var(--text);
+  max-width: 60ch;
+}
+@media (min-width: 720px) {
+  .device-form {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    align-items: end;
+  }
+  .device-form .hint,
+  .device-form .device-main,
+  .device-form .device-actions {
+    grid-column: 1 / -1;
+  }
+}
+.vpage-main > .sheet {
+  background: var(--slate);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 16px;
+}

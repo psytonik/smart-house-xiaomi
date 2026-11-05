@@ -141,9 +141,9 @@ export function viewOf(d: DeviceRecord): DeviceView {
  * The devices that are still configured in .env (the camera, the lamp, the vacuum, the TV), shown in the same list.
  * They are not copied into the file: .env stays their one source until their drivers read the registry.
  */
-export function envDevices(cfg: Pick<Config, "lightIp" | "stream">, env: NodeJS.ProcessEnv = process.env): DeviceView[] {
+export function envDevices(cfg: Pick<Config, "lightIp" | "stream">, env: NodeJS.ProcessEnv = process.env, camera: { host?: string; did?: string } = {}): DeviceView[] {
   const base = { addedAt: new Date(0).toISOString(), origin: "env" as const, editable: false };
-  const list: DeviceView[] = [{ ...base, id: "env-camera", kind: "camera", protocol: "go2rtc", name: "Camera", model: cfg.stream, hasToken: false }];
+  const list: DeviceView[] = [{ ...base, id: "env-camera", kind: "camera", protocol: "go2rtc", name: "Camera", model: cfg.stream, hasToken: false, ...(camera.host && { host: camera.host }), ...(camera.did && { did: camera.did }) }];
   if (cfg.lightIp) list.push({ ...base, id: "env-light", kind: "light", protocol: "cozylife", name: "Lamp", host: cfg.lightIp, hasToken: false });
   const vacuumIp = env.VACUUM_IP?.trim();
   if (vacuumIp) list.push({ ...base, id: "env-vacuum", kind: "vacuum", protocol: "miio", name: "Vacuum", host: vacuumIp, hasToken: !!env.VACUUM_TOKEN });

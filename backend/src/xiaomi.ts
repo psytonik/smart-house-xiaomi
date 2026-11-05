@@ -112,6 +112,26 @@ export class XiaomiSetup {
     return (await this.sources(account, region)).map(({ src: _src, ...d }) => d);
   }
 
+  /**
+   * The address (and own id, when go2rtc still lists the source) of the camera behind the main stream. Only these facts leave:
+   * a source carries the account token. A running stream lists the camera's `remote_addr` instead of its source; a stream that is
+   * not connected lists the `xiaomi://` source. Best effort: an empty answer when go2rtc is down or the stream is not a camera.
+   */
+  async cameraIdentity(): Promise<{ host?: string; did?: string }> {
+    try {
+      const res = await this.call("/api/streams", {}, 1500);
+      if (!res.ok) return {};
+      const body = (await res.json()) as Record<string, { producers?: Array<{ url?: string; remote_addr?: string }> } | undefined>;
+      const producers = body[this.cfg.stream]?.producers ?? [];
+      const url = producers.find((p) => p.url?.startsWith("xiaomi://"))?.url ?? "";
+      const host = /@([^?:/]+)(?:[?:/]|$)/.exec(url)?.[1] ?? producers.map((p) => /^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/.exec(p.remote_addr ?? "")?.[1]).find(Boolean);
+      const did = new URLSearchParams(url.split("?")[1] ?? "").get("did") ?? undefined;
+      return { ...(host && { host }), ...(did && DID.test(did) && { did }) };
+    } catch {
+      return {};
+    }
+  }
+
   /** Names of the streams go2rtc has, never their sources (those carry tokens). */
   async streams(): Promise<CameraStream[]> {
     const res = await this.call("/api/streams");
