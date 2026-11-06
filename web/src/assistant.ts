@@ -147,8 +147,8 @@ function soundsLikeWake(word: string): boolean {
   const latin = [...w].map((c) => LATIN[c] ?? c).join("").replace(/c/g, "k");
   if (latin.length < 5 || latin.length > 8) return false;
   if (latin.startsWith("ka") && distance(latin, "kapara") <= 2) return true;
-  // Same consonants, other vowels: «капара», «корпора» (k-p-r, k-r-p-r).
-  return /^k[aeiou]/.test(latin) && /^kr?[pb]r$/.test(latin.replace(/[aeiou]/g, "").replace(/(.)\1+/g, "$1"));
+  // Same consonants, other vowels (and л heard as р): «капара», «корпора», «копала» (k-p-r, k-r-p-r).
+  return /^k[aeiou]/.test(latin) && /^kr?[pb]r$/.test(latin.replace(/[aeiou]/g, "").replace(/l/g, "r").replace(/(.)\1+/g, "$1"));
 }
 
 const WAKE_KEY = "cam.alwaysListen";
