@@ -144,3 +144,21 @@ describe("Voice always listening", () => {
     localStorage.clear();
   });
 });
+
+describe("Voice home place", () => {
+  it("tells the house where the browser is, from the GPS", async () => {
+    vi.stubGlobal("navigator", { ...navigator, geolocation: { getCurrentPosition: (ok: (p: unknown) => void) => ok({ coords: { latitude: 32.79, longitude: 34.99 } }) } });
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === "/api/home" && init?.method === "PUT") return reply({ set: true });
+      if (url === "/api/home") return reply({ set: false });
+      return reply({ configured: true });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<Voice onAuthLost={() => {}} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Talk to the house" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Определить по GPS" }));
+    expect(await screen.findByText("Дом: по GPS")).toBeTruthy();
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT")!;
+    expect(JSON.parse(String(put[1]!.body))).toEqual({ lat: 32.79, lon: 34.99 });
+  });
+});

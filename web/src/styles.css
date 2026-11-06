@@ -2249,6 +2249,12 @@ button:disabled {
 .voice-button.wake {
   border-color: var(--signal);
 }
+.voice-home {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
 .voice-wake {
   display: flex;
   gap: 8px;

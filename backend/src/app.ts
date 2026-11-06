@@ -9,6 +9,7 @@ import { camerasRoutes } from "./routes/cameras.js";
 import { eventsRoutes } from "./routes/events.js";
 import { lampRoutes } from "./routes/lamp.js";
 import { liveRoutes } from "./routes/live.js";
+import { homeRoutes } from "./routes/home.js";
 import { ptzRoutes } from "./routes/ptz.js";
 import { pushRoutes } from "./routes/push.js";
 import { snapshotsRoutes } from "./routes/snapshots.js";
@@ -39,7 +40,7 @@ export async function buildApp(cfg: Config, opts: { logger?: boolean } = {}) {
 
   app.get("/health", async () => ({ ok: true }));
 
-  for (const routes of [assistantRoutes, statusRoutes, ptzRoutes, ptzPositionRoutes, snapshotsRoutes, eventsRoutes, zonesRoutes, pushRoutes, camerasRoutes, lampRoutes, devicesRoutes, vacuumRoutes, tvRoutes, liveRoutes]) {
+  for (const routes of [assistantRoutes, homeRoutes, statusRoutes, ptzRoutes, ptzPositionRoutes, snapshotsRoutes, eventsRoutes, zonesRoutes, pushRoutes, camerasRoutes, lampRoutes, devicesRoutes, vacuumRoutes, tvRoutes, liveRoutes]) {
     routes(app, ctx);
   }
 

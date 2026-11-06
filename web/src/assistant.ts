@@ -67,6 +67,27 @@ export async function teachPhrase(text: string): Promise<void> {
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not teach (${res.status})`);
 }
 
+/** Where the house is, if it was told (a city said aloud or the browser's GPS). */
+export async function homePlace(): Promise<{ set: boolean; name?: string }> {
+  try {
+    const res = await api("/api/home");
+    return res.ok ? ((await res.json()) as { set: boolean; name?: string }) : { set: false };
+  } catch {
+    return { set: false };
+  }
+}
+
+/** Asks the browser where it is (it asks the person first) and tells the house. Resolves with the words to show. */
+export async function homeFromGps(): Promise<string> {
+  if (!("geolocation" in navigator)) throw new Error("This browser cannot tell where it is.");
+  const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+    navigator.geolocation.getCurrentPosition(resolve, (e) => reject(new Error(e.code === 1 ? "Location is blocked for this page: allow it in the address bar." : "Could not find the location.")), { timeout: 15000 }),
+  );
+  const res = await api("/api/home", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude }) });
+  if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not save the place (${res.status})`);
+  return "Запомнил: вы здесь, где сейчас браузер.";
+}
+
 // The browser's speech recognition is not in TypeScript's DOM types yet (Chrome and Safari ship it, with a webkit prefix).
 interface Recognition {
   lang: string;

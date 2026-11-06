@@ -16,6 +16,7 @@ const has = (text: string, re: RegExp) => re.test(text);
 /** Questions asked when the phrase names the setting but not the value; the next phrase may be just the answer. */
 export const ASK_SUCTION = "Какую мощность всасывания: тихо, стандарт, сильно или турбо?";
 export const askTurn = (degrees: number) => `Куда повернуть камеру на ${degrees}°: налево или направо?`;
+export const ASK_HOME = "Где вы живёте? Назовите город, или нажмите в панели «Определить по GPS».";
 export const ASK_WATER = "Сколько воды: мало, средне или много?";
 export const ASK_MODE = "Какой режим уборки: сухая, мытьё или двойная?";
 /** Asked when the phrase is about a vacuum and nothing could be done with it. */
@@ -95,6 +96,11 @@ function planOne(part: string): Step[] | null {
     const day = new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
     return [{ tool: "ask", input: {}, say: `Сегодня ${day}` }];
   }
+
+  // --- weather outside, and where the house is (for the weather) ---
+  if (has(t, /(погод|сколько градусов|температур\S* на улице|на улице (тепло|холодно|дожд|снег|жарко|сколько)|нужен ли зонт|брать зонт|идёт ли дождь|идет ли дождь|будет ли дождь)/)) return [{ tool: "weather", input: {}, say: "" }];
+  const lives = /(?:я живу|мой дом|мой город)\s+(?:в|во|на)\s+(.+)$/.exec(t);
+  if (lives) return [{ tool: "home_place", input: { name: lives[1]!.trim() }, say: "Запомнил, где вы живёте" }];
 
   // --- light ---
   if (has(t, WORDS.light) && !has(t, WORDS.vacuum) && !has(t, WORDS.camera)) {
@@ -244,6 +250,11 @@ export function planFollowUp(phrase: string, lastAssistant: string | undefined):
   if (lastAssistant === ASK_MODE) {
     const mode = cleaningMode(phrase);
     return mode ? [{ tool: "vacuum_mode", input: { mode }, say: { both: "Включил двойную уборку", mopping: "Включил мытьё", sweeping: "Включил сухую уборку" }[mode] }] : null;
+  }
+  if (lastAssistant === ASK_HOME) {
+    // «Хайфа», «в Хайфе», «я живу в городе Хайфа».
+    const name = phrase.replace(/^(я )?(живу )?(в|во|на) /, "").replace(/^(городе|город|селе|посёлке) /, "").trim();
+    return name ? [{ tool: "home_place", input: { name }, say: "Запомнил, где вы живёте" }, { tool: "weather", input: {}, say: "" }] : null;
   }
   const asked = /^Куда повернуть камеру на (\d+)°/.exec(lastAssistant ?? "");
   if (asked) {

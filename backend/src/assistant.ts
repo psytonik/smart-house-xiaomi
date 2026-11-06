@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { PTZ_OPERATIONS } from "./go2rtc.js";
 import { MOTOR_MAX, MOTOR_MIN } from "./ptzGoto.js";
 import type { AssistantMemory } from "./assistantMemory.js";
-import { ASK_VACUUM, planFollowUp, planQuick, type Step } from "./quick.js";
+import { ASK_HOME, ASK_VACUUM, planFollowUp, planQuick, type Step } from "./quick.js";
 import { APP_IDS, KEY_NAMES } from "./tv/messages.js";
 import { CLEANING_MODE_NAMES, SUCTION_NAMES, VACUUM_ACTIONS, WATER_NAMES } from "./vacuum.js";
 
@@ -52,6 +52,11 @@ export const TOOLS: Anthropic.Tool[] = [
     name: "camera_move",
     description: "Повернуть камеру. Один шаг это небольшой поворот; для «сильно» поставь до 5 шагов.",
     input_schema: object({ direction: { type: "string", enum: Object.keys(PTZ_OPERATIONS) }, steps: { type: "integer", minimum: 1, maximum: 5 } }, ["direction"]),
+  },
+  {
+    name: "weather",
+    description: "Погода на улице сейчас (температура, небо, ветер, нужен ли зонт). Если место дома не задано, вернёт ошибку home-not-set: спроси, в каком городе человек живёт.",
+    input_schema: object({}),
   },
   {
     name: "camera_back",
@@ -243,6 +248,10 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
       if (out.status < 400) cameraBefore = { angle: pos.angle, elevation: pos.elevation };
       return out;
     }
+    case "weather":
+      return call("GET", "/api/weather");
+    case "home_place":
+      return call("POST", "/api/home/place", { name: String(input.name ?? "") });
     case "camera_places":
       return call("GET", "/api/ptz/presets");
     case "camera_position":
@@ -370,6 +379,9 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
     }
     const ok = out.status < 400;
     actions.push({ tool, input, ok });
+    // The weather needs to know where the house is: ask once, and the next phrase is the answer.
+    if (tool === "weather" && out.status === 409 && (out.body as { error?: string } | null)?.error === "home-not-set") return { reply: ASK_HOME, actions };
+    if (ok && tool === "weather") say = String((out.body as { text?: string }).text ?? "");
     if (!ok) {
       const why = (out.body as { error?: string } | null)?.error;
       return { reply: `Не получилось: ${why ?? "устройство не ответило"}.`, actions };

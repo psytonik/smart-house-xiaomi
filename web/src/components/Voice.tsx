@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { AuthError } from "../api";
-import { afterWakeWord, askAssistant, assistantConfigured, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, suggestions, teachPhrase, voiceChoice, wakeMode, type PiperVoice, type Recognition, type Suggestion, type Turn } from "../assistant";
+import { afterWakeWord, askAssistant, assistantConfigured, homeFromGps, homePlace, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, suggestions, teachPhrase, voiceChoice, wakeMode, type PiperVoice, type Recognition, type Suggestion, type Turn } from "../assistant";
 
 type Phase = "idle" | "listening" | "thinking";
 
@@ -20,6 +20,7 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
   const history = useRef<Turn[]>([]);
   const rec = useRef<Recognition | null>(null);
   const canListen = recognitionCtor() !== undefined;
+  const [home, setHome] = useState("");
   const [always, setAlways] = useState(wakeMode.get);
   const [speaking, setSpeaking] = useState(false);
   const speechRun = useRef(0);
@@ -52,6 +53,7 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
   useEffect(() => {
     if (!open) return;
     let live = true;
+    void homePlace().then((h) => live && setHome(h.set ? (h.name ?? "по GPS") : ""));
     void suggestions().then((s) => live && setIdeas(s));
     return () => {
       live = false;
@@ -260,6 +262,22 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
               {error}
             </p>
           )}
+          <div className="voice-home">
+            <button
+              type="button"
+              className="voice-remember"
+              onClick={() => {
+                setError("");
+                void homeFromGps().then(
+                  () => setHome("по GPS"),
+                  (e: unknown) => setError(e instanceof Error ? e.message : "could not find the location"),
+                );
+              }}
+            >
+              Определить по GPS
+            </button>
+            <span className="voice-note">{home ? `Дом: ${home}` : "Место дома не задано (для погоды)"}</span>
+          </div>
           {canListen && (
             <label className="voice-wake">
               <input
