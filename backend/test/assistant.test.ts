@@ -307,6 +307,27 @@ describe("quick commands (rules, no model)", () => {
     assert.deepEqual(plan("открой ютуб"), [["tv_app", "youtube"]]);
   });
 
+  it("reads suction: «мощность» alone is not «strong»; down and up are relative; no level asks", () => {
+    const input = (t: string) => planQuick(plain(t))?.[0]?.input;
+    assert.deepEqual(input("снизь мощность пылесоса"), { delta: -1 });
+    assert.deepEqual(input("увеличь мощность пылесоса"), { delta: 1 });
+    assert.deepEqual(input("слабая мощность пылесоса"), { level: "quiet" });
+    assert.deepEqual(input("мощность пылесоса сильная"), { level: "strong" });
+    assert.equal(planQuick(plain("поменяй мощность пылесоса"))?.[0]?.tool, "ask");
+  });
+
+  it("moves suction one level from where the robot is, and stops at the ends", async () => {
+    const run = async (have: string, delta: number) => {
+      const calls: Array<[string, string, object | undefined]> = [];
+      const call: ApiCall = async (m, u, b) => (calls.push([m, u, b]), { status: 200, body: u === "/api/vacuum" ? { suction: have } : { ok: true } });
+      await runAssistant({ brain: scripted(message("tool_use", [{ type: "tool_use", id: "t", name: "vacuum_suction", input: { delta } }]), message("end_turn", [{ type: "text", text: "ок" }])).brain, model: "m", call, text: "x" });
+      return calls.at(-1);
+    };
+    assert.deepEqual(await run("strong", -1), ["POST", "/api/vacuum/suction", { level: "standard" }]);
+    assert.deepEqual(await run("standard", 1), ["POST", "/api/vacuum/suction", { level: "strong" }]);
+    assert.deepEqual(await run("quiet", -1), ["POST", "/api/vacuum/suction", { level: "quiet" }]);
+  });
+
   it("leaves the camera places to the model: only the model knows the names a person gave them", () => {
     for (const heard of ["поверни камеру к двери", "посмотри на окно", "камера на дверь", "запомни это место как дверь"]) assert.equal(planQuick(plain(heard)), null, heard);
   });

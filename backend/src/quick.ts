@@ -60,12 +60,20 @@ function waterLevel(t: string, bare = false): "low" | "medium" | "high" | null {
 }
 
 /** Suction in the phrase: «мощность максимум», «потише», «турбо». Null when it is not about suction. */
+/** "Снизь/увеличь мощность": one level down or up from where it is now. */
+function suctionDelta(t: string): -1 | 1 | null {
+  if (!has(t, /(мощност|всасыван)/)) return null;
+  if (has(t, /(сни[зж]|уменьш|пониз|убав|убери|меньше|поменьше|слабее|потише|тише)/)) return -1;
+  if (has(t, /(увелич|повыс|подним|добав|больше|побольше|сильнее|помощнее)/)) return 1;
+  return null;
+}
+
 function suctionLevel(t: string, needsPowerWord: boolean): "quiet" | "standard" | "strong" | "turbo" | null {
   const about = has(t, /(мощност|всасыван)/);
   if (needsPowerWord && !about) return null;
-  if (has(t, /(тих|тише|потише|quiet|silent|eco|эко)/)) return "quiet";
+  if (has(t, /(тих|тише|потише|слаб|quiet|silent|eco|эко)/)) return "quiet";
   if (has(t, /(турбо|turbo|тур бо|максимальн|максимум|max|на полную)/)) return "turbo";
-  if (has(t, /(сильн|мощн|высок|strong|high)/)) return "strong";
+  if (has(t, /(сильн|мощн(?!ост)|высок|strong|high)/)) return "strong";
   if (has(t, /(стандарт|standard|обычн|средн|нормальн|medium|normal)/) && about) return "standard";
   return null;
 }
@@ -101,6 +109,8 @@ function planOne(part: string): Step[] | null {
   if (!has(t, WORDS.light) && !has(t, WORDS.tv) && !has(t, WORDS.vacuum)) {
     const water = waterLevel(t);
     if (water) return [{ tool: "vacuum_water", input: { level: water }, say: "Поменял количество воды" }];
+    const delta = suctionDelta(t);
+    if (delta) return [{ tool: "vacuum_suction", input: { delta }, say: "Поменял мощность пылесоса" }];
     const suction = suctionLevel(t, true);
     if (suction) return [{ tool: "vacuum_suction", input: { level: suction }, say: "Поменял мощность пылесоса" }];
     if (has(t, /(мощност|всасыван)/)) return [{ tool: "ask", input: {}, say: ASK_SUCTION }];
@@ -123,6 +133,8 @@ function planOne(part: string): Step[] | null {
       if (start) steps.push({ tool: "vacuum_clean", input: { text: t }, say: "Пылесос начал уборку" });
       return steps;
     }
+    const delta = suctionDelta(t);
+    if (delta && !start) return [{ tool: "vacuum_suction", input: { delta }, say: "Поменял мощность пылесоса" }];
     const suction = suctionLevel(t, false);
     if (suction && !start) return [{ tool: "vacuum_suction", input: { level: suction }, say: "Поменял мощность пылесоса" }];
     const water = waterLevel(t);

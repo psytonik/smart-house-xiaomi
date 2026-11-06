@@ -277,8 +277,19 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
       return call("POST", "/api/vacuum", { action: input.action });
     case "vacuum_mode":
       return call("POST", "/api/vacuum/mode", { mode: input.mode });
-    case "vacuum_suction":
-      return call("POST", "/api/vacuum/suction", { level: input.level });
+    case "vacuum_suction": {
+      let level = input.level;
+      if (input.delta !== undefined) {
+        // One level up or down from where the robot is now.
+        const now = await call("GET", "/api/vacuum");
+        const have = (now.body as { suction?: string }).suction;
+        const at = SUCTION_NAMES.indexOf(have as (typeof SUCTION_NAMES)[number]);
+        if (now.status >= 400 || at < 0) return { status: 409, body: { error: "the robot did not say its current suction" } };
+        const next = Math.max(0, Math.min(SUCTION_NAMES.length - 1, at + Number(input.delta)));
+        level = SUCTION_NAMES[next];
+      }
+      return call("POST", "/api/vacuum/suction", { level });
+    }
     case "vacuum_water":
       return call("POST", "/api/vacuum/water", { level: input.level });
     case "vacuum_map_refresh":
