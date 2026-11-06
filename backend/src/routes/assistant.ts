@@ -5,7 +5,7 @@ import type { AppContext } from "../context.js";
 import { plain, runAssistant, type ApiCall, type Brain } from "../assistant.js";
 import { AssistantMemory } from "../assistantMemory.js";
 import { HttpError } from "../go2rtc.js";
-import { analyze } from "../journalReport.js";
+import { analyze, autoTeach } from "../journalReport.js";
 import { OllamaError, ollamaBrain } from "../ollama.js";
 
 /** `brain` is only for tests; the real client reads ANTHROPIC_API_KEY (or a logged-in profile) itself. */
@@ -52,7 +52,9 @@ export function assistantRoutes(app: FastifyInstance, ctx: AppContext, brain?: B
       };
 
       try {
-        return await runAssistant({ brain: client, model: cfg.assistant.model, call, text: req.body.text, history: req.body.history, memory });
+        const out = await runAssistant({ brain: client, model: cfg.assistant.model, call, text: req.body.text, history: req.body.history, memory });
+        if (autoTeach(memory)) out.learned = true;
+        return out;
       } catch (e) {
         if (e instanceof OllamaError) throw new HttpError(502, e.message);
         if (e instanceof Anthropic.APIError) {

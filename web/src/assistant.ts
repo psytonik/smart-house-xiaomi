@@ -9,6 +9,7 @@ export interface AssistantAnswer {
   reply: string;
   /** The model handled this one: the phrase can be saved as a quick command. */
   learnable?: boolean;
+  learned?: boolean;
   actions: Array<{ tool: string; input: unknown; ok: boolean }>;
 }
 

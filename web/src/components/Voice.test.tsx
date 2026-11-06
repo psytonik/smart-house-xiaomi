@@ -57,7 +57,7 @@ describe("Voice remembering", () => {
     render(<Voice onAuthLost={() => {}} />);
     await typeCommand("включи ночник");
     fireEvent.click(await screen.findByRole("button", { name: "Remember this phrase" }));
-    expect(await screen.findByText(/Remembered/)).toBeTruthy();
+    expect(await screen.findByText(/Запомнил/)).toBeTruthy();
     const learn = fetchMock.mock.calls.find(([u]) => u === "/api/assistant/learn")!;
     expect(JSON.parse(String(learn[1]!.body))).toEqual({ text: "включи ночник" });
   });

@@ -74,6 +74,7 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
         history.current = [...history.current, { role: "user" as const, content: text }, { role: "assistant" as const, content: answer.reply }].slice(-8);
         setReply(answer.reply);
         setTeachable(answer.learnable === true);
+        setTaught(answer.learned === true);
         const run = ++speechRun.current;
         setSpeaking(true);
         void speak(answer.reply).then(() => {
@@ -236,7 +237,7 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
               Remember this phrase
             </button>
           )}
-          {taught && <p className="voice-note">Remembered: next time it runs instantly.</p>}
+          {taught && <p className="voice-note">Запомнил: в следующий раз выполню сразу. Скажите «нет, не то» сразу после, и я забуду.</p>}
           {ideas.length > 0 && phase === "idle" && (
             <div className="voice-ideas">
               <p className="voice-note">Did you mean it? Teach it once:</p>

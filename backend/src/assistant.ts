@@ -24,6 +24,8 @@ export interface AssistantReply {
   reply: string;
   /** The model understood this one and it worked: the person may ask to remember the phrase. */
   learnable?: boolean;
+  /** The assistant learned this phrase by itself just now. */
+  learned?: boolean;
   /** What was done, for the screen (the tool names with their arguments). */
   actions: Array<{ tool: string; input: unknown; ok: boolean }>;
 }
@@ -410,10 +412,19 @@ async function placeInPhrase(phrase: string, call: ApiCall): Promise<Step[] | nu
   }
 }
 
+/** The model's own words for "I could not do that". */
+const NOT_UNDERSTOOD = /(не (могу|знаю|понял|поняла|умею|получилось)|нет (функци|инструмент|возможност)|у меня нет)/i;
+
+/** The person says the last guess was wrong: it must not be learned (or is forgotten if just learned). */
+const CORRECTION = /^(?:нет|не то|не так|неправильно|не надо|отмена|отмени)(?![а-яё])/u;
+
 /** Understands one spoken phrase (with the recent turns for context) and does it. */
 export async function runAssistant(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[]; memory?: AssistantMemory }): Promise<AssistantReply> {
   const phrase = plain(opts.text);
   const { memory } = opts;
+  if (CORRECTION.test(phrase)) memory?.correction();
+  // The last phrase was not understood and the person was asked what they meant: this phrase is the explanation.
+  const explains = CORRECTION.test(phrase) ? undefined : memory?.takeAsked();
   // What the household taught it, then the everyday rules: instant, free, and never "say it and not do it". The model is for the rest.
   const taught = memory?.find(phrase);
   const lastSaid = [...(opts.history ?? [])].reverse().find((t) => t.role === "assistant")?.content;
@@ -425,12 +436,25 @@ export async function runAssistant(opts: { brain: Brain; model: string; call: Ap
     via = "model";
     result = await askModel(opts);
     // About the vacuum, but nothing was done (no tool fit, or the model only talked): ask what is meant instead of "no tool for that".
-    if (result.actions.length === 0 && /(пылесос|уборк|робот)/.test(phrase)) result = { reply: ASK_VACUUM, actions: [] };
+    if (result.actions.length === 0 && /(пылесос|уборк|робот)/.test(phrase)) {
+      result = { reply: ASK_VACUUM, actions: [] };
+      memory?.ask(phrase);
+    } else if (result.actions.length === 0 && NOT_UNDERSTOOD.test(result.reply)) {
+      // Not "no tool for that" and stop: ask what was meant, and learn the answer.
+      result = { reply: `Не поняла «${opts.text.trim().replace(/[.!?]+$/u, "")}». Что вы имели в виду? Скажите по-другому, и я запомню.`, actions: [] };
+      memory?.ask(phrase);
+    }
     const done = result.actions.filter((a) => DOES.has(a.tool));
     if (done.length > 0 && done.every((a) => a.ok)) {
-      memory?.offer(phrase, done.map((a) => ({ tool: a.tool, input: a.input as Record<string, unknown>, say: result.reply.replace(/[.!]+$/u, "") })));
-      result.learnable = true;
+      const learnedNow = memory?.offer(phrase, done.map((a) => ({ tool: a.tool, input: a.input as Record<string, unknown>, say: result.reply.replace(/[.!]+$/u, "") })));
+      if (learnedNow) result.learned = true;
+      else result.learnable = true;
     }
+  }
+  if (explains && explains !== phrase && result.actions.length > 0 && result.actions.every((a) => a.ok)) {
+    const done = result.actions.filter((a) => DOES.has(a.tool));
+    const taught = steps ?? done.map((a) => ({ tool: a.tool, input: a.input as Record<string, unknown>, say: result.reply.replace(/[.!]+$/u, "") }));
+    if (done.length > 0 && memory?.teach(explains, taught)) result.learned = true;
   }
   memory?.note({ text: opts.text, via, ok: result.actions.length > 0 && result.actions.every((a) => a.ok), reply: result.reply, actions: result.actions.map((a) => ({ tool: a.tool, ok: a.ok })) });
   return result;

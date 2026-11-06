@@ -87,6 +87,12 @@ export function analyze(entries: JournalEntry[], learned: ReadonlySet<string> = 
   };
 }
 
+/** Phrases that failed and were fixed the same way at least twice are taught without asking. True if something was learned. */
+export function autoTeach(memory: AssistantMemory): boolean {
+  const sure = analyze(memory.recent(500).reverse(), new Set(memory.list().map((l) => l.phrase))).proposals.filter((p) => p.times >= 2);
+  return sure.filter((p) => memory.teach(p.phrase, p.steps)).length > 0;
+}
+
 export function render(r: Report): string {
   const pct = (n: number) => `${Math.round((n / (r.total || 1)) * 100)}%`;
   const list = (rows: Array<{ phrase: string; times: number }>, max = 15) => (rows.length ? rows.slice(0, max).map((x) => `  ${x.times}× «${x.phrase}»`).join("\n") : "  нет");

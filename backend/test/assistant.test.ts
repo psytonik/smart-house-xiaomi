@@ -77,6 +77,19 @@ describe("assistant API", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it("teaches a failed phrase by itself once the person fixed it the same way twice", () => {
+    const d = mkdtempSync(join(tmpdir(), "mem-"));
+    const line = (at: string, text: string, via: string, ok: boolean) => JSON.stringify({ at, text, via, ok, reply: "x", actions: [] });
+    const fix = (day: string) => [line(`2026-11-0${day}T10:00:00Z`, "хочу темноту", "model", false), line(`2026-11-0${day}T10:00:20Z`, "выключи свет", "rules", true)];
+    const memory = new AssistantMemory(d);
+    writeFileSync(join(d, "journal.jsonl"), fix("1").join("\n") + "\n");
+    assert.equal(autoTeach(memory), false, "once is only a suggestion");
+    writeFileSync(join(d, "journal.jsonl"), [...fix("1"), ...fix("2")].join("\n") + "\n");
+    assert.equal(autoTeach(memory), true);
+    assert.equal(memory.list()[0]!.phrase, "хочу темноту");
+    rmSync(d, { recursive: true, force: true });
+  });
+
   it("offers what the person meant after a failure, and teaches it only when approved", async () => {
     const line = (at: string, text: string, via: string, ok: boolean) => JSON.stringify({ at, text, via, ok, reply: "x", actions: [] });
     writeFileSync(join(dir, "assistant", "journal.jsonl"), [line("2026-11-01T10:00:00Z", "хочу темноту", "model", false), line("2026-11-01T10:00:20Z", "выключи свет", "rules", true)].join("\n") + "\n");
@@ -293,7 +306,7 @@ describe("assistant input and honesty", () => {
     const call: ApiCall = async () => ({ status: 200, body: {} });
     const { brain } = scripted(message("end_turn", [{ type: "text", text: "Выключаю свет." }]), message("end_turn", [{ type: "text", text: "Выключаю свет." }]));
     const out = await runAssistant({ brain, model: "m", call, text: "Сделай чтобы стало темно" });
-    assert.match(out.reply, /Не получилось/);
+    assert.match(out.reply, /Не поняла/);
     assert.deepEqual(out.actions, []);
   });
 });
@@ -453,6 +466,7 @@ describe("quick commands (rules, no model)", () => {
 });
 
 import { AssistantMemory } from "../src/assistantMemory.js";
+import { autoTeach } from "../src/journalReport.js";
 
 describe("assistant learns from the household", () => {
   const brainThatActs = () =>
@@ -472,6 +486,58 @@ describe("assistant learns from the household", () => {
     assert.match(again.reply, /ночник/i);
     // and it survives a restart
     assert.equal(new AssistantMemory(dir).find("включи ночник")?.length, 1);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("learns a phrase by itself on the second identical success, and 'нет' takes it back", async () => {
+    const dir = tmp();
+    const memory = new AssistantMemory(dir);
+    const run = (text: string, brain = brainThatActs()) => runAssistant({ brain, model: "m", call: okCall, text, memory });
+    const first = await run("Включи ночник");
+    assert.equal(first.learnable, true);
+    assert.equal(first.learned, undefined);
+    assert.equal(memory.find("включи ночник"), undefined, "one run is not enough");
+    const second = await run("Включи ночник");
+    assert.equal(second.learned, true);
+    assert.equal(memory.find("включи ночник")?.length, 1);
+
+    // "no, not that" right after forgets what was just learned
+    const never: Brain = { messages: { create: async () => assert.fail("not needed") } };
+    await run("включи ночник", never); // answered from memory
+    await runAssistant({ brain: scripted(message("end_turn", [{ type: "text", text: "Ок" }]), message("end_turn", [{ type: "text", text: "Ок" }])).brain, model: "m", call: okCall, text: "Нет, не то", memory });
+    assert.equal(memory.find("включи ночник"), undefined);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("asks what was meant when it does not understand, and learns the explanation", async () => {
+    const dir = tmp();
+    const memory = new AssistantMemory(dir);
+    const calls: string[] = [];
+    const call: ApiCall = async (m, u) => (calls.push(`${m} ${u}`), { status: 200, body: { ok: true } });
+    const miss = scripted(message("end_turn", [{ type: "text", text: "Нет инструмента для уборки всего дома." }]), message("end_turn", [{ type: "text", text: "Нет инструмента для уборки всего дома." }]));
+    const asked = await runAssistant({ brain: miss.brain, model: "m", call, text: "Помой дом", memory });
+    assert.match(asked.reply, /Не поняла «Помой дом»\. Что вы имели в виду/);
+    assert.deepEqual(asked.actions, []);
+
+    const never: Brain = { messages: { create: async () => assert.fail("rules understand this") } };
+    const answer = await runAssistant({ brain: never, model: "m", call, text: "запусти пылесос", memory });
+    assert.equal(answer.learned, true);
+    assert.equal(memory.find("помой дом")?.[0]?.tool, "vacuum_clean");
+
+    const again = await runAssistant({ brain: never, model: "m", call, text: "помой дом", memory });
+    assert.equal(again.actions[0]?.tool, "vacuum_action");
+    // an unrelated command later is not taught for a question nobody asked
+    assert.equal(memory.takeAsked(), undefined);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("does not learn when the two runs did different things", () => {
+    const dir = tmp();
+    const memory = new AssistantMemory(dir);
+    assert.equal(memory.offer("x", [{ tool: "tv_key", input: { key: "mute" }, say: "a" }]), false);
+    assert.equal(memory.offer("x", [{ tool: "tv_key", input: { key: "ok" }, say: "a" }]), false);
+    assert.equal(memory.find("x"), undefined);
+    assert.equal(memory.offer("x", [{ tool: "tv_key", input: { key: "ok" }, say: "b" }]), true);
     rmSync(dir, { recursive: true, force: true });
   });
 
