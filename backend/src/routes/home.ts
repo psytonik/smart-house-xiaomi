@@ -7,10 +7,12 @@ import { join } from "node:path";
 /** Where the house is (said as a city, or taken from the browser's GPS) and the weather outside. */
 export function homeRoutes(app: FastifyInstance, ctx: AppContext): void {
   const store = new HomeStore(join(ctx.cfg.dataDir));
-  const ready = store.init();
+  // Read on first use, not when the routes are registered: the data folder may not exist yet.
+  let started: Promise<void> | undefined;
+  const ready = () => (started ??= store.init());
 
   app.get("/api/home", async () => {
-    await ready;
+    await ready();
     const home = store.get();
     return home ? { set: true, ...home } : { set: false };
   });
@@ -20,7 +22,7 @@ export function homeRoutes(app: FastifyInstance, ctx: AppContext): void {
     "/api/home",
     { schema: { body: { type: "object", required: ["lat", "lon"], additionalProperties: false, properties: { lat: { type: "number" }, lon: { type: "number" }, name: { type: "string", maxLength: 80 } } } } },
     async (req) => {
-      await ready;
+      await ready();
       try {
         forgetWeather();
         return { set: true, ...(await store.set(req.body)) };
@@ -36,7 +38,7 @@ export function homeRoutes(app: FastifyInstance, ctx: AppContext): void {
     "/api/home/place",
     { schema: { body: { type: "object", required: ["name"], additionalProperties: false, properties: { name: { type: "string", minLength: 1, maxLength: 80 } } } } },
     async (req) => {
-      await ready;
+      await ready();
       let found;
       try {
         found = await geocode(req.body.name.trim());
@@ -50,7 +52,7 @@ export function homeRoutes(app: FastifyInstance, ctx: AppContext): void {
   );
 
   app.get("/api/weather", async () => {
-    await ready;
+    await ready();
     const home = store.get();
     if (!home) throw new HttpError(409, "home-not-set");
     try {

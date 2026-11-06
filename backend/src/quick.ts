@@ -98,6 +98,8 @@ function planOne(part: string): Step[] | null {
   }
 
   // --- weather outside, and where the house is (for the weather) ---
+  // The weather of another place («в Париже») is not the house's weather: the model's business, not a rule's.
+  if (has(t, /погод\S*\s+(в|во|на)\s+(?!улиц)\S+/)) return null;
   if (has(t, /(погод|сколько градусов|температур\S* на улице|на улице (тепло|холодно|дожд|снег|жарко|сколько)|нужен ли зонт|брать зонт|идёт ли дождь|идет ли дождь|будет ли дождь)/)) return [{ tool: "weather", input: {}, say: "" }];
   const lives = /(?:я живу|мой дом|мой город)\s+(?:в|во|на)\s+(.+)$/.exec(t);
   if (lives) return [{ tool: "home_place", input: { name: lives[1]!.trim() }, say: "Запомнил, где вы живёте" }];
