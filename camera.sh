@@ -4,8 +4,9 @@
 #   ./camera.sh              start everything, follow the logs; Ctrl+C stops what this script started
 #   ./camera.sh up           start everything in the background and return (close the terminal if you like)
 #   ./camera.sh stop         stop what this script started
-#   ./camera.sh restart      stop, then start in the background
-#   ./camera.sh restart backend   restart only the backend: go2rtc keeps its session with the camera, so the picture does not glitch
+#   ./camera.sh restart      rebuild the web app, stop, then start in the background
+#   ./camera.sh build-web    rebuild the web app only (the backend serves it from disk: reload the page)
+#   ./camera.sh restart backend   rebuild the web app, restart only the backend: go2rtc keeps its session with the camera, so the picture does not glitch
 #   ./camera.sh status       what is running, and the addresses
 #   ./camera.sh logs         follow the logs of both
 #   ./camera.sh motor left|right|up|down     move the camera by hand (go2rtc must be running)
@@ -168,6 +169,14 @@ stop_all() {
   stop_one ble     && any=0
   stop_one go2rtc  && any=0
   [ "$any" -eq 0 ] || say "Нечего останавливать: этот скрипт ничего не запускал."
+}
+
+# Rebuilds the web app into backend/public. If the build fails the old build stays and is still served.
+build_web() {
+  say "Собираю веб-приложение..."
+  (cd web && { [ -d node_modules ] || npm install --no-audit --no-fund; } && npm run build >/dev/null) \
+    && say "Веб-приложение собрано" \
+    || warn "сборка веб-приложения не удалась, остаётся прежняя (подробности: cd web && npm run build)"
 }
 
 up() {
@@ -411,10 +420,11 @@ case "${1:-start}" in
   up)            up; summary ;;
   stop)          stop_all ;;
   restart)       case "${2:-}" in
-                   backend) stop_one backend; up; summary ;;   # go2rtc and the camera session stay as they are
-                   "")      stop_all; up; summary ;;
+                   backend) build_web; stop_one backend; up; summary ;;   # go2rtc and the camera session stay as they are
+                   "")      build_web; stop_all; up; summary ;;
                    *)       die "использование: ./camera.sh restart [backend]" ;;
                  esac ;;
+  build-web)     build_web ;;
   status)        cmd_status ;;
   logs)          if [ -f "$LOGS/ble.log" ]; then tail -n 50 -F "$LOGS/go2rtc.log" "$LOGS/backend.log" "$LOGS/ble.log"; else tail -n 50 -F "$LOGS/go2rtc.log" "$LOGS/backend.log"; fi ;;
   motor)         cmd_motor "${2:-}" ;;
