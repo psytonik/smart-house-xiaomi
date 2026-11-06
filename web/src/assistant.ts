@@ -99,7 +99,32 @@ const WAKE = /^[\s,.!?-]*(?:ка[пб]{1,2}[аоеи]р[а-яё]{0,3}|ка\s+п�
  */
 export function afterWakeWord(text: string): string | null {
   const m = WAKE.exec(text);
-  return m ? text.slice(m[0].length).trim() : null;
+  if (m) return text.slice(m[0].length).trim();
+  // The recognizer also turns the word into real ones («Camaro», «Каммаро»): accept a first word that sounds close enough.
+  const first = /^[\s,.!?-]*([a-zа-яё]+)[\s,.!?:-]*/i.exec(text);
+  if (first && soundsLikeWake(first[1]!)) return text.slice(first[0].length).trim();
+  return null;
+}
+
+const LATIN: Record<string, string> = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "j", з: "z", и: "i", й: "i", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "c", ч: "c", ш: "s", щ: "s", ы: "i", э: "e", ю: "u", я: "a" };
+
+/** Edit distance between two short words. */
+function distance(a: string, b: string): number {
+  let row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++) next[j] = Math.min(row[j]! + 1, next[j - 1]! + 1, row[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+    row = next;
+  }
+  return row[b.length]!;
+}
+
+/** A word that starts like «капара» and is at most two letters away from it once written in Latin («Camaro», «Каммаро»). «Камера»/«camera» is a real word and is left alone. */
+function soundsLikeWake(word: string): boolean {
+  const w = word.toLowerCase();
+  if (/^(камер|camera)/.test(w)) return false;
+  const latin = [...w].map((c) => LATIN[c] ?? c).join("").replace(/c/g, "k");
+  return latin.length >= 5 && latin.length <= 8 && latin.startsWith("ka") && distance(latin, "kapara") <= 2;
 }
 
 const WAKE_KEY = "cam.alwaysListen";
