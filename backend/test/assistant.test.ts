@@ -307,6 +307,11 @@ describe("quick commands (rules, no model)", () => {
     assert.deepEqual(plan("открой ютуб"), [["tv_app", "youtube"]]);
   });
 
+  it("sets the cleaning mode even when the robot is not named", () => {
+    assert.deepEqual(planQuick(plain("Поменяй режим на мытьё"))?.map((s) => [s.tool, s.input.mode]), [["vacuum_mode", "mopping"]]);
+    assert.deepEqual(planQuick(plain("режим сухая уборка"))?.map((s) => [s.tool, s.input.mode]), [["vacuum_mode", "sweeping"]]);
+  });
+
   it("reads suction: «мощность» alone is not «strong»; down and up are relative; no level asks", () => {
     const input = (t: string) => planQuick(plain(t))?.[0]?.input;
     assert.deepEqual(input("снизь мощность пылесоса"), { delta: -1 });

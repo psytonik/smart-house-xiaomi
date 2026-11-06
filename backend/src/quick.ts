@@ -118,7 +118,8 @@ function planOne(part: string): Step[] | null {
   }
 
   // --- vacuum ---
-  if (has(t, WORDS.vacuum) || (has(t, /(пропылесос|убери|помой пол|подмети)/) && !has(t, /(звук|громкост)/))) {
+  // «Поменяй режим на мытьё» names no robot, but nothing else in the house has a cleaning mode.
+  if (has(t, WORDS.vacuum) || (has(t, /режим/) && cleaningMode(t) !== null && !has(t, WORDS.tv) && !has(t, WORDS.camera)) || (has(t, /(пропылесос|убери|помой пол|подмети)/) && !has(t, /(звук|громкост)/))) {
     if (has(t, /(найди|где|подай голос|позови)/)) return [{ tool: "vacuum_action", input: { action: "find" }, say: "Пылесос подаёт голос" }];
     if (has(t, /(опустоши|вытряхни|очисти бак|опорожни)/)) return [{ tool: "vacuum_action", input: { action: "empty" }, say: "Опустошаю бак" }];
     if (has(t, /(домой|на базу|на станцию|на зарядку|заряжаться|вернись)/)) return [{ tool: "vacuum_action", input: { action: "dock" }, say: "Пылесос едет на базу" }];
