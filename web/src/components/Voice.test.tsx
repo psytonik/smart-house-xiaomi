@@ -103,3 +103,44 @@ describe("Voice with Piper", () => {
     expect(JSON.parse(String((call[1] as RequestInit).body))).toEqual({ text: "хочу темноту" });
   });
 });
+
+describe("Voice always listening", () => {
+  it("acts only on phrases that start with the wake word", async () => {
+    let rec!: { onresult: (e: unknown) => void; started: boolean };
+    vi.stubGlobal(
+      "webkitSpeechRecognition",
+      class {
+        onresult: (e: unknown) => void = () => {};
+        started = false;
+        constructor() {
+          rec = this;
+        }
+        start() {
+          this.started = true;
+        }
+        stop() {}
+      },
+    );
+    const fetchMock = vi.fn(async (_u: string, init?: RequestInit) => (init?.method === "POST" ? reply({ reply: "Свет включён.", actions: [] }) : reply({ configured: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    localStorage.setItem("cam.alwaysListen", "1");
+    render(<Voice onAuthLost={() => {}} />);
+    await waitFor(() => expect(rec?.started).toBe(true));
+    // Like the browser, every event carries all the results of the session so far.
+    const heardSoFar: unknown[] = [];
+    const said = (text: string) => {
+      heardSoFar.push(Object.assign([{ transcript: text }], { isFinal: true }));
+      return { results: [...heardSoFar] };
+    };
+
+    rec.onresult(said("включи свет"));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+
+    rec.onresult(said("Капара, включи свет"));
+    expect(await screen.findByText("Свет включён.")).toBeTruthy();
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === "POST")!;
+    expect(JSON.parse(String(post[1]!.body))).toMatchObject({ text: "включи свет" });
+    localStorage.clear();
+  });
+});

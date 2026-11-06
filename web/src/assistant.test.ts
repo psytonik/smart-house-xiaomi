@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { piperVoices, russianVoices, speak, stopSpeaking } from "./assistant";
+import { afterWakeWord, piperVoices, russianVoices, speak, stopSpeaking } from "./assistant";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -25,5 +25,22 @@ describe("speaking", () => {
     finish(new Response("RIFFfake"));
     await new Promise((r) => setTimeout(r, 0));
     expect(played).not.toHaveBeenCalled();
+  });
+});
+
+describe("wake word", () => {
+  it("returns the command after «Капара»", () => {
+    expect(afterWakeWord("Капара, включи свет")).toBe("включи свет");
+    expect(afterWakeWord("капара запусти пылесос")).toBe("запусти пылесос");
+    expect(afterWakeWord("Ка пара, выключи свет.")).toBe("выключи свет.");
+  });
+  it("returns an empty command when only the wake word was said", () => {
+    expect(afterWakeWord("Капара")).toBe("");
+    expect(afterWakeWord("Капара!")).toBe("");
+  });
+  it("ignores phrases that do not start with it", () => {
+    expect(afterWakeWord("включи свет")).toBeNull();
+    expect(afterWakeWord("скажи капара")).toBeNull();
+    expect(afterWakeWord("Капарасик пришёл")).toBeNull();
   });
 });

@@ -2246,6 +2246,15 @@ button:disabled {
   border-color: var(--signal);
   color: var(--ink);
 }
+.voice-button.wake {
+  border-color: var(--signal);
+}
+.voice-wake {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.85rem;
+}
 .voice-panel {
   width: min(340px, calc(100vw - 32px));
   padding: 14px;

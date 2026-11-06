@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { AuthError } from "../api";
-import { askAssistant, assistantConfigured, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, suggestions, teachPhrase, voiceChoice, type PiperVoice, type Recognition, type Suggestion, type Turn } from "../assistant";
+import { afterWakeWord, askAssistant, assistantConfigured, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, suggestions, teachPhrase, voiceChoice, wakeMode, type PiperVoice, type Recognition, type Suggestion, type Turn } from "../assistant";
 
 type Phase = "idle" | "listening" | "thinking";
 
@@ -20,6 +20,11 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
   const history = useRef<Turn[]>([]);
   const rec = useRef<Recognition | null>(null);
   const canListen = recognitionCtor() !== undefined;
+  const [always, setAlways] = useState(wakeMode.get);
+  const [speaking, setSpeaking] = useState(false);
+  const speechRun = useRef(0);
+  /** Until when the next phrase is a command, after the wake word was said on its own. */
+  const awaiting = useRef(0);
   const [voices, setVoices] = useState<string[]>([]);
   const [piper, setPiper] = useState<PiperVoice[]>([]);
   const [voice, setVoice] = useState(voiceChoice.get);
@@ -67,7 +72,11 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
         history.current = [...history.current, { role: "user" as const, content: text }, { role: "assistant" as const, content: answer.reply }].slice(-8);
         setReply(answer.reply);
         setTeachable(answer.learnable === true);
-        speak(answer.reply);
+        const run = ++speechRun.current;
+        setSpeaking(true);
+        void speak(answer.reply).then(() => {
+          if (run === speechRun.current) setSpeaking(false);
+        });
       } catch (e) {
         if (e instanceof AuthError) return onAuthLost();
         setError(e instanceof Error ? e.message : "the assistant failed");
@@ -110,6 +119,86 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
   }, [ask]);
 
   useEffect(() => () => rec.current?.stop(), []);
+
+  const askRef = useRef(ask);
+  askRef.current = ask;
+
+  // "Always listening": the microphone stays open and only phrases that start with the wake word are acted on.
+  // It pauses while a command is being understood and while the answer is spoken, so the house does not hear itself.
+  useEffect(() => {
+    const Ctor = recognitionCtor();
+    if (!always || !Ctor || !configured || phase !== "idle" || speaking) return;
+    let stopped = false;
+    let current: Recognition | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const start = () => {
+      if (stopped) return;
+      const r = new Ctor();
+      r.lang = "ru-RU";
+      r.interimResults = false;
+      r.continuous = true;
+      let seen = 0;
+      r.onresult = (e) => {
+        const parts = Array.from(e.results).slice(seen);
+        seen += parts.length;
+        for (const part of parts) {
+          const text = (part[0]?.transcript ?? "").trim();
+          const command = afterWakeWord(text);
+          if (command === null) {
+            // Not for the house, unless the wake word was the whole previous phrase.
+            if (Date.now() < awaiting.current && text) {
+              awaiting.current = 0;
+              setOpen(true);
+              void askRef.current(text);
+              return;
+            }
+            continue;
+          }
+          setOpen(true);
+          if (command === "") {
+            awaiting.current = Date.now() + 8000;
+            setError("");
+            setHeard("Слушаю команду…");
+            continue;
+          }
+          awaiting.current = 0;
+          void askRef.current(command);
+          return;
+        }
+      };
+      r.onerror = (e) => {
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+          setError("The browser has no access to the microphone. Allow it in the address bar.");
+          stopped = true;
+          wakeMode.set(false);
+          setAlways(false);
+        }
+      };
+      r.onend = () => {
+        current = null;
+        // The browser ends a continuous session now and then (silence, a network blip): open the next one.
+        if (!stopped) timer = setTimeout(start, 400);
+      };
+      current = r;
+      try {
+        r.start();
+      } catch {
+        current = null;
+        timer = setTimeout(start, 1000);
+      }
+    };
+    start();
+
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      if (current) {
+        current.onend = null;
+        current.stop();
+      }
+    };
+  }, [always, configured, phase, speaking]);
 
   if (!configured) return null;
 
@@ -170,6 +259,19 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
               {error}
             </p>
           )}
+          {canListen && (
+            <label className="voice-wake">
+              <input
+                type="checkbox"
+                checked={always}
+                onChange={(e) => {
+                  setAlways(e.target.checked);
+                  wakeMode.set(e.target.checked);
+                }}
+              />
+              Always listening: start with «Капара»
+            </label>
+          )}
           {(voices.length > 0 || piper.length > 0) && (
             <div className="voice-settings">
               <label>
@@ -221,7 +323,7 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
       )}
       <button
         type="button"
-        className={`voice-button${phase === "listening" ? " on" : ""}`}
+        className={`voice-button${phase === "listening" ? " on" : always ? " wake" : ""}`}
         aria-label={phase === "listening" ? "Stop listening" : "Talk to the house"}
         aria-pressed={phase === "listening"}
         onClick={() => {

@@ -87,6 +87,22 @@ export function recognitionCtor(): RecognitionCtor | undefined {
 
 export type { Recognition };
 
+/**
+ * The word that starts every command in "always listening" mode. Speech recognition spells an invented word
+ * differently each time, so the common mishearings are accepted too.
+ */
+const WAKE = /^[\s,.!?-]*(?:капара|каппара|кападра|капарра|капора|ка\s+пара|kapara)(?![а-яёa-z])[\s,.!?:-]*/i;
+
+/**
+ * What was said after the wake word: the command, "" when only the wake word was said, null when the phrase
+ * does not start with it (then it is not for the house and is ignored).
+ */
+export function afterWakeWord(text: string): string | null {
+  const m = WAKE.exec(text);
+  return m ? text.slice(m[0].length).trim() : null;
+}
+
+const WAKE_KEY = "cam.alwaysListen";
 const VOICE_KEY = "cam.voice";
 const RATE_KEY = "cam.voiceRate";
 
@@ -113,6 +129,12 @@ export function russianVoices(): SpeechSynthesisVoice[] {
   if (!("speechSynthesis" in window)) return [];
   return window.speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith("ru") && !UNWANTED.test(v.name));
 }
+
+/** Whether the microphone stays open, waiting for the wake word. Remembered per browser. */
+export const wakeMode = {
+  get: (): boolean => stored(WAKE_KEY) === "1",
+  set: (on: boolean): void => store(WAKE_KEY, on ? "1" : "0"),
+};
 
 export const voiceChoice = {
   get: (): string => stored(VOICE_KEY) ?? "",
@@ -157,6 +179,12 @@ export async function piperVoices(): Promise<PiperVoice[]> {
 }
 
 let playing: HTMLAudioElement | null = null;
+/** Resolvers of the speak() calls whose answer has not finished yet. */
+const unfinished = new Set<() => void>();
+function finished(): void {
+  for (const done of unfinished) done();
+  unfinished.clear();
+}
 /** Bumped by every stopSpeaking(): an answer that was still being fetched must not start playing after the microphone opened. */
 let speechId = 0;
 
@@ -170,7 +198,13 @@ async function speakWithPiper(text: string, voice: string): Promise<boolean> {
     if (mine !== speechId) return true; // stopped while the voice was being made: stay silent
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
-    audio.onended = () => URL.revokeObjectURL(url);
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      if (mine === speechId) finished();
+    };
+    audio.onerror = () => {
+      if (mine === speechId) finished();
+    };
     playing = audio;
     await audio.play();
     return true;
@@ -180,29 +214,39 @@ async function speakWithPiper(text: string, voice: string): Promise<boolean> {
 }
 
 function speakWithBrowser(text: string): void {
-  if (!("speechSynthesis" in window)) return;
+  const mine = speechId;
+  if (!("speechSynthesis" in window)) return finished();
   window.speechSynthesis.cancel();
   const voices = russianVoices();
   // With no wanted voice left the answer stays on the screen: the browser would otherwise pick its default (Milena).
-  if (voices.length === 0) return;
+  if (voices.length === 0) return finished();
   const u = new SpeechSynthesisUtterance(text);
+  u.onend = u.onerror = () => {
+    if (mine === speechId) finished();
+  };
   u.lang = "ru-RU";
   u.rate = voiceChoice.rate();
   u.voice = voices.find((v) => v.name === voiceChoice.get()) ?? voices[0]!;
   window.speechSynthesis.speak(u);
 }
 
-/** Says the text out loud in Russian with the chosen voice (Piper by default when the server has it), replacing whatever is being said. */
-export function speak(text: string): void {
+/**
+ * Says the text out loud in Russian with the chosen voice (Piper by default when the server has it), replacing whatever is being said.
+ * Resolves when the answer has been said, was cut off, or could not be said at all.
+ */
+export function speak(text: string): Promise<void> {
   stopSpeaking();
-  const choice = voiceChoice.get();
-  if (piperKnown && (choice === "" || choice.startsWith(PIPER))) {
-    void speakWithPiper(text, choice.startsWith(PIPER) ? choice.slice(PIPER.length) : piperDefault).then((ok) => {
-      if (!ok) speakWithBrowser(text);
-    });
-    return;
-  }
-  speakWithBrowser(text);
+  return new Promise<void>((resolve) => {
+    unfinished.add(resolve);
+    const choice = voiceChoice.get();
+    if (piperKnown && (choice === "" || choice.startsWith(PIPER))) {
+      void speakWithPiper(text, choice.startsWith(PIPER) ? choice.slice(PIPER.length) : piperDefault).then((ok) => {
+        if (!ok) speakWithBrowser(text);
+      });
+      return;
+    }
+    speakWithBrowser(text);
+  });
 }
 
 export function stopSpeaking(): void {
@@ -210,4 +254,5 @@ export function stopSpeaking(): void {
   playing?.pause();
   playing = null;
   if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+  finished();
 }
