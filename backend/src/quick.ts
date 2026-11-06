@@ -78,10 +78,23 @@ function suctionLevel(t: string, needsPowerWord: boolean): "quiet" | "standard" 
   return null;
 }
 
+/** «1 час, 2 часа, 5 часов». */
+const plural = (n: number, one: string, few: string, many: string) => (n % 100 >= 11 && n % 100 <= 14 ? many : n % 10 === 1 ? one : n % 10 >= 2 && n % 10 <= 4 ? few : many);
+
 /** One short command (no "and") to the steps it means, or null if it is not one the rules know. */
 function planOne(part: string): Step[] | null {
   const t = part.trim();
   if (!t) return null;
+
+  // --- time and date: nothing to do, only to say (the "ask" step says its text and does nothing) ---
+  if (has(t, /(который час|сколько (сейчас )?времени|сколько время|скажи время|сколько натикало)/)) {
+    const d = new Date();
+    return [{ tool: "ask", input: {}, say: `Сейчас ${d.getHours()} ${plural(d.getHours(), "час", "часа", "часов")} ${d.getMinutes()} ${plural(d.getMinutes(), "минута", "минуты", "минут")}` }];
+  }
+  if (has(t, /(какое (сегодня )?число|какой (сегодня )?(день|дата)|какая (сегодня )?дата|сегодня какое)/)) {
+    const day = new Date().toLocaleDateString("ru-RU", { weekday: "long", day: "numeric", month: "long" });
+    return [{ tool: "ask", input: {}, say: `Сегодня ${day}` }];
+  }
 
   // --- light ---
   if (has(t, WORDS.light) && !has(t, WORDS.vacuum) && !has(t, WORDS.camera)) {

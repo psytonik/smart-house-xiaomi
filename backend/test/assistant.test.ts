@@ -307,6 +307,13 @@ describe("quick commands (rules, no model)", () => {
     assert.deepEqual(plan("открой ютуб"), [["tv_app", "youtube"]]);
   });
 
+  it("tells the time and the date without a model", () => {
+    const say = (t: string) => planQuick(plain(t))?.[0]?.say;
+    assert.match(say("Который час") ?? "", /^Сейчас \d+ (час|часа|часов) \d+ (минута|минуты|минут)$/);
+    assert.match(say("сколько времени") ?? "", /^Сейчас /);
+    assert.match(say("какое сегодня число") ?? "", /^Сегодня /);
+  });
+
   it("sets the cleaning mode even when the robot is not named", () => {
     assert.deepEqual(planQuick(plain("Поменяй режим на мытьё"))?.map((s) => [s.tool, s.input.mode]), [["vacuum_mode", "mopping"]]);
     assert.deepEqual(planQuick(plain("режим сухая уборка"))?.map((s) => [s.tool, s.input.mode]), [["vacuum_mode", "sweeping"]]);
