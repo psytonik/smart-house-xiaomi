@@ -189,6 +189,45 @@ describe("assistant tools resolve names for the model", () => {
       assert.deepEqual(b.calls.at(-1), ["GET", "/api/ptz/presets", undefined]);
     });
 
+    it("turns by degrees: left raises the angle, right lowers it, and the range is kept", async () => {
+      const turn = async (direction: string, degrees: number, angle: number) => {
+        const calls: Array<[string, string, object | undefined]> = [];
+        const call: ApiCall = async (m, u, b) => (calls.push([m, u, b]), { status: 200, body: u.startsWith("/api/ptz/position") ? { known: true, angle, elevation: 40 } : { ok: true } });
+        await runAssistant({ brain: brainFor("camera_turn", { direction, degrees }), model: "m", call, text: "x" });
+        return calls.at(-1);
+      };
+      assert.deepEqual(await turn("right", 90, 80), ["POST", "/api/ptz/goto", { angle: 55, elevation: 40 }]);
+      assert.deepEqual(await turn("left", 90, 20), ["POST", "/api/ptz/goto", { angle: 45, elevation: 40 }]);
+      assert.deepEqual(await turn("right", 180, 30), ["POST", "/api/ptz/goto", { angle: 1, elevation: 40 }]);
+    });
+
+    it("says so when the camera does not say where it points, and moves nothing", async () => {
+      const calls: string[] = [];
+      const call: ApiCall = async (m, u) => (calls.push(`${m} ${u}`), { status: 200, body: { known: false } });
+      const out = await runAssistant({ brain: brainFor("camera_turn", { direction: "left", degrees: 90 }), model: "m", call, text: "x" });
+      assert.equal(out.actions[0]!.ok, false);
+      assert.equal(calls.length, 1);
+    });
+
+    it("goes back to where the camera pointed before its last move, and forward again on the second ask", async () => {
+      let at = { angle: 70, elevation: 40 };
+      const gotos: object[] = [];
+      const call: ApiCall = async (_m, u, b) => {
+        if (u.startsWith("/api/ptz/position")) return { status: 200, body: { known: true, ...at } };
+        if (u === "/api/ptz/goto") {
+          gotos.push(b!);
+          at = b as typeof at;
+        }
+        if (u === "/api/ptz") at = { angle: 40, elevation: 40 };
+        return { status: 200, body: { ok: true } };
+      };
+      await runAssistant({ brain: brainFor("camera_move", { direction: "right" }), model: "m", call, text: "x" });
+      await runAssistant({ brain: brainFor("camera_back", {}), model: "m", call, text: "x" });
+      assert.deepEqual(gotos, [{ angle: 70, elevation: 40 }]);
+      await runAssistant({ brain: brainFor("camera_back", {}), model: "m", call, text: "x" });
+      assert.deepEqual(gotos.at(-1), { angle: 40, elevation: 40 });
+    });
+
     it("counts going to a place and saving one as things done, but not looking", async () => {
       const { call } = record();
       const go = await runAssistant({ brain: brainFor("camera_go_place", { name: "окно" }), model: "m", call, text: "x" });
@@ -261,6 +300,8 @@ describe("quick commands (rules, no model)", () => {
     assert.deepEqual(plan("пылесос домой"), [["vacuum_action", "dock"]]);
     assert.deepEqual(plan("останови пылесос"), [["vacuum_action", "stop"]]);
     assert.deepEqual(plan("поверни камеру налево"), [["camera_move", "left"]]);
+    assert.deepEqual(plan("верни камеру назад"), [["camera_back", undefined]]);
+    assert.deepEqual(plan("камера как было"), [["camera_back", undefined]]);
     assert.deepEqual(plan("сделай погромче"), [["tv_key", "volumeUp"]]);
     assert.deepEqual(plan("выключи звук"), [["tv_key", "mute"]]);
     assert.deepEqual(plan("открой ютуб"), [["tv_app", "youtube"]]);

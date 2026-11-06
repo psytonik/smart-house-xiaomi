@@ -137,6 +137,10 @@ function planOne(part: string): Step[] | null {
   // --- camera ---
   if (has(t, WORDS.camera) || has(t, /(поверни|повернись|крути)/)) {
     const far = has(t, /(сильно|сильнее|намного|до конца|побольше)/);
+    // "назад", "верни как было": back to where the camera pointed before its last move.
+    if (has(t, /(назад|обратно|на место|как было|прежн|изначальн|исходн)/) && !has(t, /(лев|влево|налево|прав|вправо|направо|вверх|вниз)/)) {
+      return [{ tool: "camera_back", input: {}, say: "Камера вернулась на прежнее место" }];
+    }
     // "направо на 180 градусов": a turn by an angle, walked by the camera's own position, not a couple of steps.
     const turn = /(\d{1,3})\s*(?:°|градус)/.exec(t);
     const side = has(t, /(лев|влево|налево)/) ? "left" : has(t, /(прав|вправо|направо)/) ? "right" : null;

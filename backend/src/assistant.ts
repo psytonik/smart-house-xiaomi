@@ -54,6 +54,11 @@ export const TOOLS: Anthropic.Tool[] = [
     input_schema: object({ direction: { type: "string", enum: Object.keys(PTZ_OPERATIONS) }, steps: { type: "integer", minimum: 1, maximum: 5 } }, ["direction"]),
   },
   {
+    name: "camera_back",
+    description: "Вернуть камеру туда, куда она смотрела до последнего поворота («назад», «верни как было»). Повторный вызов возвращает обратно.",
+    input_schema: object({}),
+  },
+  {
     name: "camera_turn",
     description: "Повернуть камеру влево или вправо на заданное число градусов («направо на 90 градусов», «разверни на 180»). Приблизительно: камера идёт шагами, пока не придёт в нужное положение или не упрётся в край.",
     input_schema: object({ direction: { type: "string", enum: ["left", "right"] }, degrees: { type: "integer", minimum: 1, maximum: 360 } }, ["direction", "degrees"]),
@@ -188,11 +193,44 @@ export const DEGREES_PER_UNIT = 3.55;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+interface CameraPos {
+  angle: number;
+  elevation: number;
+}
+/** Where the camera pointed before its last move by this assistant, so "back" has somewhere to go. */
+let cameraBefore: CameraPos | undefined;
+
+async function cameraNow(call: ApiCall, fresh: boolean): Promise<CameraPos | undefined> {
+  try {
+    const r = await call("GET", fresh ? "/api/ptz/position?refresh=1" : "/api/ptz/position");
+    const b = r.body as { known?: boolean; angle?: number; elevation?: number };
+    return r.status < 400 && b.known && b.angle !== undefined && b.elevation !== undefined ? { angle: b.angle, elevation: b.elevation } : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Runs a camera move and remembers where the camera was, if the move worked. */
+async function movingCamera(call: ApiCall, move: () => Promise<{ status: number; body: unknown }>): Promise<{ status: number; body: unknown }> {
+  const before = await cameraNow(call, false);
+  const out = await move();
+  if (out.status < 400 && before) cameraBefore = before;
+  return out;
+}
+
 /** One tool call becomes one or more calls to the app's own API. */
 async function runTool(name: string, input: Record<string, unknown>, call: ApiCall): Promise<{ status: number; body: unknown }> {
   switch (name) {
     case "camera_move":
-      return call("POST", "/api/ptz", { direction: input.direction, ...(input.steps ? { steps: input.steps } : {}) });
+      return movingCamera(call, () => call("POST", "/api/ptz", { direction: input.direction, ...(input.steps ? { steps: input.steps } : {}) }));
+    case "camera_back": {
+      if (!cameraBefore) return { status: 409, body: { error: "I do not remember where the camera pointed before: nothing was moved by voice yet" } };
+      const target = cameraBefore;
+      const here = await cameraNow(call, true);
+      const out = await call("POST", "/api/ptz/goto", target);
+      if (out.status < 400 && here) cameraBefore = here; // saying it again goes forward again
+      return out;
+    }
     case "camera_turn": {
       const here = await call("GET", "/api/ptz/position?refresh=1");
       if (here.status >= 400) return here;
@@ -201,7 +239,9 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
       const units = Math.round(Number(input.degrees) / DEGREES_PER_UNIT);
       // Left raises the angle, right lowers it (measured on the camera); the range is 1..101.
       const angle = Math.max(MOTOR_MIN, Math.min(MOTOR_MAX, pos.angle + (input.direction === "left" ? units : -units)));
-      return call("POST", "/api/ptz/goto", { angle, elevation: pos.elevation });
+      const out = await call("POST", "/api/ptz/goto", { angle, elevation: pos.elevation });
+      if (out.status < 400) cameraBefore = { angle: pos.angle, elevation: pos.elevation };
+      return out;
     }
     case "camera_places":
       return call("GET", "/api/ptz/presets");
@@ -217,7 +257,7 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
       const said = String(input.name ?? "").trim().toLowerCase();
       const hit = known.find((p) => p.name.toLowerCase() === said) ?? known.find((p) => matchesRoom(said, p.name));
       if (!hit) return { status: 400, body: { error: `no such place: ${said}`, places: known.map((p) => p.name) } };
-      return call("POST", `/api/ptz/presets/${encodeURIComponent(hit.id)}/go`);
+      return movingCamera(call, () => call("POST", `/api/ptz/presets/${encodeURIComponent(hit.id)}/go`));
     }
     case "lights_list":
       return call("GET", "/api/lights");
@@ -329,7 +369,7 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
 }
 
 /** Tools that change something; the others only look, and are not worth remembering. */
-const DOES = new Set(["camera_move", "camera_turn", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
+const DOES = new Set(["camera_move", "camera_back", "camera_turn", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
 
 /** Understands one spoken phrase (with the recent turns for context) and does it. */
 export async function runAssistant(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[]; memory?: AssistantMemory }): Promise<AssistantReply> {

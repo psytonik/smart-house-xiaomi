@@ -37,6 +37,8 @@ describe("wake word", () => {
     expect(afterWakeWord("Кабара включи свет")).toBe("включи свет");
     expect(afterWakeWord("capara найди пылесос")).toBe("найди пылесос");
     expect(afterWakeWord("Camaro Найди пылесос")).toBe("Найди пылесос");
+    expect(afterWakeWord("к пара Поверни камеру на 90° налево")).toBe("Поверни камеру на 90° налево");
+    expect(afterWakeWord("Катара Поверни камеру влево")).toBe("Поверни камеру влево");
     expect(afterWakeWord("Камаро, включи свет")).toBe("включи свет");
     expect(afterWakeWord("Kappara, включи свет")).toBe("включи свет");
   });
