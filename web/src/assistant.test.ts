@@ -38,6 +38,7 @@ describe("wake word", () => {
     expect(afterWakeWord("capara найди пылесос")).toBe("найди пылесос");
     expect(afterWakeWord("Camaro Найди пылесос")).toBe("Найди пылесос");
     expect(afterWakeWord("к пара Поверни камеру на 90° налево")).toBe("Поверни камеру на 90° налево");
+    expect(afterWakeWord("корпора Поменяй режим пылесоса на мытьё")).toBe("Поменяй режим пылесоса на мытьё");
     expect(afterWakeWord("та пара Очисти бачок")).toBe("Очисти бачок");
     expect(afterWakeWord("Катара Поверни камеру влево")).toBe("Поверни камеру влево");
     expect(afterWakeWord("Камаро, включи свет")).toBe("включи свет");
@@ -52,6 +53,7 @@ describe("wake word", () => {
     expect(afterWakeWord("скажи капара")).toBeNull();
     expect(afterWakeWord("Какаду включи свет")).toBeNull();
     expect(afterWakeWord("Камера включи свет")).toBeNull();
+    expect(afterWakeWord("корпорация включи свет")).toBeNull();
     expect(afterWakeWord("карта найди пылесос")).toBeNull();
   });
 });

@@ -124,7 +124,10 @@ function soundsLikeWake(word: string): boolean {
   const w = word.toLowerCase();
   if (/^(камер|camera)/.test(w)) return false;
   const latin = [...w].map((c) => LATIN[c] ?? c).join("").replace(/c/g, "k");
-  return latin.length >= 5 && latin.length <= 8 && latin.startsWith("ka") && distance(latin, "kapara") <= 2;
+  if (latin.length < 5 || latin.length > 8) return false;
+  if (latin.startsWith("ka") && distance(latin, "kapara") <= 2) return true;
+  // Same consonants, other vowels: «капара», «корпора» (k-p-r, k-r-p-r).
+  return /^k[aeiou]/.test(latin) && /^kr?[pb]r$/.test(latin.replace(/[aeiou]/g, "").replace(/(.)\1+/g, "$1"));
 }
 
 const WAKE_KEY = "cam.alwaysListen";
