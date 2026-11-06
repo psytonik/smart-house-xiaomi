@@ -177,13 +177,13 @@ function planOne(part: string): Step[] | null {
     }
     // "направо на 180 градусов": a turn by an angle, walked by the camera's own position, not a couple of steps.
     const turn = /(\d{1,3})\s*(?:°|градус)/.exec(t);
-    const side = has(t, /(лев|влево|налево)/) ? "left" : has(t, /(прав|вправо|направо)/) ? "right" : null;
+    const side = has(t, /((?<![а-яё])лев|влево|налево)/) ? "left" : has(t, /((?<![а-яё])прав|вправо|направо)/) ? "right" : null;
     if (turn && side) {
       const degrees = Math.min(360, Number(turn[1]));
       if (degrees > 0) return [{ tool: "camera_turn", input: { direction: side, degrees }, say: `Камера повернулась ${side === "left" ? "налево" : "направо"} примерно на ${degrees}°` }];
     }
     if (turn && !side && has(t, /(поверни|повернись|крути)/)) return [{ tool: "ask", input: { degrees: Math.min(360, Number(turn[1])) }, say: askTurn(Math.min(360, Number(turn[1]))) }];
-    const dir = has(t, /(лев|влево|налево)/) ? "left" : has(t, /(прав|вправо|направо)/) ? "right" : has(t, /(вверх|выше|поднимись|наверх)/) ? "up" : has(t, /(вниз|ниже|опустись)/) ? "down" : null;
+    const dir = has(t, /((?<![а-яё])лев|влево|налево)/) ? "left" : has(t, /((?<![а-яё])прав|вправо|направо)/) ? "right" : has(t, /(вверх|выше|поднимись|наверх)/) ? "up" : has(t, /(вниз|ниже|опустись)/) ? "down" : null;
     if (dir && has(t, /(поверни|повернись|крути|двинь|посмотри|смотри|наклони|камер)/)) {
       const names = { left: "налево", right: "направо", up: "вверх", down: "вниз" } as const;
       return [{ tool: "camera_move", input: { direction: dir, steps: far ? 4 : 2 }, say: `Камера повернулась ${names[dir]}` }];
@@ -260,7 +260,7 @@ export function planFollowUp(phrase: string, lastAssistant: string | undefined):
   }
   const asked = /^Куда повернуть камеру на (\d+)°/.exec(lastAssistant ?? "");
   if (asked) {
-    const side = has(phrase, /(лев|влево|налево)/) ? "left" : has(phrase, /(прав|вправо|направо)/) ? "right" : null;
+    const side = has(phrase, /((?<![а-яё])лев|влево|налево)/) ? "left" : has(phrase, /((?<![а-яё])прав|вправо|направо)/) ? "right" : null;
     return side ? [{ tool: "camera_turn", input: { direction: side, degrees: Number(asked[1]) }, say: `Камера повернулась ${side === "left" ? "налево" : "направо"} примерно на ${asked[1]}°` }] : null;
   }
   if (lastAssistant === ASK_WATER) {

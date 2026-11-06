@@ -394,6 +394,22 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
 /** Tools that change something; the others only look, and are not worth remembering. */
 const DOES = new Set(["camera_move", "camera_back", "camera_turn", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
 
+/** Words that make a phrase about the camera, so a saved place named in it ("дверь") is a place to look at. */
+const CAMERA_TALK = /(камер|направь|поверни|повернись|посмотри|покажи|смотри)/;
+
+/** «Направь камеру к двери», «камера дверь»: the camera goes to the saved place the phrase names, if it names one. */
+async function placeInPhrase(phrase: string, call: ApiCall): Promise<Step[] | null> {
+  if (!CAMERA_TALK.test(phrase) || /(запомни|сохрани|удали|забудь)/.test(phrase)) return null;
+  try {
+    const saved = await call("GET", "/api/ptz/presets");
+    const known = (saved.body as { presets?: Array<{ name: string }> }).presets ?? [];
+    const hit = saved.status < 400 ? known.find((p) => matchesRoom(phrase, p.name)) : undefined;
+    return hit ? [{ tool: "camera_go_place", input: { name: hit.name }, say: `Камера повернулась к месту «${hit.name}»` }] : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Understands one spoken phrase (with the recent turns for context) and does it. */
 export async function runAssistant(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[]; memory?: AssistantMemory }): Promise<AssistantReply> {
   const phrase = plain(opts.text);
@@ -401,7 +417,7 @@ export async function runAssistant(opts: { brain: Brain; model: string; call: Ap
   // What the household taught it, then the everyday rules: instant, free, and never "say it and not do it". The model is for the rest.
   const taught = memory?.find(phrase);
   const lastSaid = [...(opts.history ?? [])].reverse().find((t) => t.role === "assistant")?.content;
-  const steps = taught ?? planFollowUp(phrase, lastSaid) ?? planQuick(phrase);
+  const steps = taught ?? planFollowUp(phrase, lastSaid) ?? (await placeInPhrase(phrase, opts.call)) ?? planQuick(phrase);
   let via: "rules" | "learned" | "model" = taught ? "learned" : "rules";
   let result: AssistantReply;
   if (steps) result = await runSteps(steps, opts.call);

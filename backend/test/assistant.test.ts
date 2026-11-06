@@ -228,6 +228,18 @@ describe("assistant tools resolve names for the model", () => {
       assert.deepEqual(gotos.at(-1), { angle: 40, elevation: 40 });
     });
 
+    it("goes to a saved place named in a plain phrase, and «направь» is not «вправо»", async () => {
+      for (const said of ["камера дверь", "направь камеру к двери", "посмотри на дверь"]) {
+        const { calls, call } = record();
+        const out = await runAssistant({ brain: {} as never, model: "m", call, text: said });
+        assert.deepEqual(calls.at(-1), ["POST", "/api/ptz/presets/pz-1/go", undefined], said);
+        assert.equal(out.actions[0]!.tool, "camera_go_place");
+      }
+      const { calls, call } = record();
+      await runAssistant({ brain: {} as never, model: "m", call, text: "поверни камеру направо" });
+      assert.deepEqual(calls.filter((c) => c[1] === "/api/ptz").length, 1);
+    });
+
     it("counts going to a place and saving one as things done, but not looking", async () => {
       const { call } = record();
       const go = await runAssistant({ brain: brainFor("camera_go_place", { name: "окно" }), model: "m", call, text: "x" });
@@ -300,6 +312,7 @@ describe("quick commands (rules, no model)", () => {
     assert.deepEqual(plan("пылесос домой"), [["vacuum_action", "dock"]]);
     assert.deepEqual(plan("останови пылесос"), [["vacuum_action", "stop"]]);
     assert.deepEqual(plan("поверни камеру налево"), [["camera_move", "left"]]);
+    assert.equal(planQuick(plain("направь камеру к двери")), null); // "направь" is not "вправо": that is a saved place, not a turn
     assert.deepEqual(plan("верни камеру назад"), [["camera_back", undefined]]);
     assert.deepEqual(plan("камера как было"), [["camera_back", undefined]]);
     assert.deepEqual(plan("сделай погромче"), [["tv_key", "volumeUp"]]);
