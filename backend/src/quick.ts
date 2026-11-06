@@ -15,6 +15,7 @@ const has = (text: string, re: RegExp) => re.test(text);
 
 /** Questions asked when the phrase names the setting but not the value; the next phrase may be just the answer. */
 export const ASK_SUCTION = "Какую мощность всасывания: тихо, стандарт, сильно или турбо?";
+export const askTurn = (degrees: number) => `Куда повернуть камеру на ${degrees}°: налево или направо?`;
 export const ASK_WATER = "Сколько воды: мало, средне или много?";
 export const ASK_MODE = "Какой режим уборки: сухая, мытьё или двойная?";
 /** Asked when the phrase is about a vacuum and nothing could be done with it. */
@@ -143,6 +144,7 @@ function planOne(part: string): Step[] | null {
       const degrees = Math.min(360, Number(turn[1]));
       if (degrees > 0) return [{ tool: "camera_turn", input: { direction: side, degrees }, say: `Камера повернулась ${side === "left" ? "налево" : "направо"} примерно на ${degrees}°` }];
     }
+    if (turn && !side && has(t, /(поверни|повернись|крути)/)) return [{ tool: "ask", input: { degrees: Math.min(360, Number(turn[1])) }, say: askTurn(Math.min(360, Number(turn[1]))) }];
     const dir = has(t, /(лев|влево|налево)/) ? "left" : has(t, /(прав|вправо|направо)/) ? "right" : has(t, /(вверх|выше|поднимись|наверх)/) ? "up" : has(t, /(вниз|ниже|опустись)/) ? "down" : null;
     if (dir && has(t, /(поверни|повернись|крути|двинь|посмотри|смотри|наклони|камер)/)) {
       const names = { left: "налево", right: "направо", up: "вверх", down: "вниз" } as const;
@@ -212,6 +214,11 @@ export function planFollowUp(phrase: string, lastAssistant: string | undefined):
   if (lastAssistant === ASK_MODE) {
     const mode = cleaningMode(phrase);
     return mode ? [{ tool: "vacuum_mode", input: { mode }, say: { both: "Включил двойную уборку", mopping: "Включил мытьё", sweeping: "Включил сухую уборку" }[mode] }] : null;
+  }
+  const asked = /^Куда повернуть камеру на (\d+)°/.exec(lastAssistant ?? "");
+  if (asked) {
+    const side = has(phrase, /(лев|влево|налево)/) ? "left" : has(phrase, /(прав|вправо|направо)/) ? "right" : null;
+    return side ? [{ tool: "camera_turn", input: { direction: side, degrees: Number(asked[1]) }, say: `Камера повернулась ${side === "left" ? "налево" : "направо"} примерно на ${asked[1]}°` }] : null;
   }
   if (lastAssistant === ASK_WATER) {
     const level = waterLevel(phrase, true);
