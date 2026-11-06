@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { PTZ_OPERATIONS } from "./go2rtc.js";
+import { MOTOR_MAX, MOTOR_MIN } from "./ptzGoto.js";
 import type { AssistantMemory } from "./assistantMemory.js";
 import { ASK_VACUUM, planFollowUp, planQuick, type Step } from "./quick.js";
 import { APP_IDS, KEY_NAMES } from "./tv/messages.js";
@@ -51,6 +52,11 @@ export const TOOLS: Anthropic.Tool[] = [
     name: "camera_move",
     description: "Повернуть камеру. Один шаг это небольшой поворот; для «сильно» поставь до 5 шагов.",
     input_schema: object({ direction: { type: "string", enum: Object.keys(PTZ_OPERATIONS) }, steps: { type: "integer", minimum: 1, maximum: 5 } }, ["direction"]),
+  },
+  {
+    name: "camera_turn",
+    description: "Повернуть камеру влево или вправо на заданное число градусов («направо на 90 градусов», «разверни на 180»). Приблизительно: камера идёт шагами, пока не придёт в нужное положение или не упрётся в край.",
+    input_schema: object({ direction: { type: "string", enum: ["left", "right"] }, degrees: { type: "integer", minimum: 1, maximum: 360 } }, ["direction", "degrees"]),
   },
   {
     name: "camera_places",
@@ -174,6 +180,12 @@ function tidyLight(patch: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
+/**
+ * How many degrees one unit of the camera's 1..101 angle scale is. NOT measured: assumed from a typical pan of about 355 degrees over
+ * the range. Turn the camera "on 180 degrees" and, if it ends up short or past, change this number.
+ */
+export const DEGREES_PER_UNIT = 3.55;
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** One tool call becomes one or more calls to the app's own API. */
@@ -181,6 +193,16 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
   switch (name) {
     case "camera_move":
       return call("POST", "/api/ptz", { direction: input.direction, ...(input.steps ? { steps: input.steps } : {}) });
+    case "camera_turn": {
+      const here = await call("GET", "/api/ptz/position?refresh=1");
+      if (here.status >= 400) return here;
+      const pos = here.body as { known?: boolean; angle?: number; elevation?: number };
+      if (!pos.known || pos.angle === undefined || pos.elevation === undefined) return { status: 409, body: { error: "the camera did not say where it points: is the stream up?" } };
+      const units = Math.round(Number(input.degrees) / DEGREES_PER_UNIT);
+      // Left raises the angle, right lowers it (measured on the camera); the range is 1..101.
+      const angle = Math.max(MOTOR_MIN, Math.min(MOTOR_MAX, pos.angle + (input.direction === "left" ? units : -units)));
+      return call("POST", "/api/ptz/goto", { angle, elevation: pos.elevation });
+    }
     case "camera_places":
       return call("GET", "/api/ptz/presets");
     case "camera_position":
@@ -307,7 +329,7 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
 }
 
 /** Tools that change something; the others only look, and are not worth remembering. */
-const DOES = new Set(["camera_move", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
+const DOES = new Set(["camera_move", "camera_turn", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
 
 /** Understands one spoken phrase (with the recent turns for context) and does it. */
 export async function runAssistant(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[]; memory?: AssistantMemory }): Promise<AssistantReply> {

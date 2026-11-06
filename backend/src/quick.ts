@@ -136,6 +136,13 @@ function planOne(part: string): Step[] | null {
   // --- camera ---
   if (has(t, WORDS.camera) || has(t, /(поверни|повернись|крути)/)) {
     const far = has(t, /(сильно|сильнее|намного|до конца|побольше)/);
+    // "направо на 180 градусов": a turn by an angle, walked by the camera's own position, not a couple of steps.
+    const turn = /(\d{1,3})\s*(?:°|градус)/.exec(t);
+    const side = has(t, /(лев|влево|налево)/) ? "left" : has(t, /(прав|вправо|направо)/) ? "right" : null;
+    if (turn && side) {
+      const degrees = Math.min(360, Number(turn[1]));
+      if (degrees > 0) return [{ tool: "camera_turn", input: { direction: side, degrees }, say: `Камера повернулась ${side === "left" ? "налево" : "направо"} примерно на ${degrees}°` }];
+    }
     const dir = has(t, /(лев|влево|налево)/) ? "left" : has(t, /(прав|вправо|направо)/) ? "right" : has(t, /(вверх|выше|поднимись|наверх)/) ? "up" : has(t, /(вниз|ниже|опустись)/) ? "down" : null;
     if (dir && has(t, /(поверни|повернись|крути|двинь|посмотри|смотри|наклони|камер)/)) {
       const names = { left: "налево", right: "направо", up: "вверх", down: "вниз" } as const;
