@@ -146,6 +146,7 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
           const text = (part[0]?.transcript ?? "").trim();
           const command = afterWakeWord(text);
           if (command === null) {
+            setHeard(`Слышу: «${text}» (без «Капара»)`);
             // Not for the house, unless the wake word was the whole previous phrase.
             if (Date.now() < awaiting.current && text) {
               awaiting.current = 0;

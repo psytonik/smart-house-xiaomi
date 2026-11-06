@@ -33,6 +33,8 @@ describe("wake word", () => {
     expect(afterWakeWord("Капара, включи свет")).toBe("включи свет");
     expect(afterWakeWord("капара запусти пылесос")).toBe("запусти пылесос");
     expect(afterWakeWord("Ка пара, выключи свет.")).toBe("выключи свет.");
+    expect(afterWakeWord("капаров Включи свет")).toBe("Включи свет");
+    expect(afterWakeWord("Кабара включи свет")).toBe("включи свет");
   });
   it("returns an empty command when only the wake word was said", () => {
     expect(afterWakeWord("Капара")).toBe("");
@@ -41,6 +43,6 @@ describe("wake word", () => {
   it("ignores phrases that do not start with it", () => {
     expect(afterWakeWord("включи свет")).toBeNull();
     expect(afterWakeWord("скажи капара")).toBeNull();
-    expect(afterWakeWord("Капарасик пришёл")).toBeNull();
+    expect(afterWakeWord("Какаду включи свет")).toBeNull();
   });
 });
