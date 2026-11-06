@@ -35,6 +35,8 @@ describe("wake word", () => {
     expect(afterWakeWord("Ка пара, выключи свет.")).toBe("выключи свет.");
     expect(afterWakeWord("капаров Включи свет")).toBe("Включи свет");
     expect(afterWakeWord("Кабара включи свет")).toBe("включи свет");
+    expect(afterWakeWord("capara найди пылесос")).toBe("найди пылесос");
+    expect(afterWakeWord("Kappara, включи свет")).toBe("включи свет");
   });
   it("returns an empty command when only the wake word was said", () => {
     expect(afterWakeWord("Капара")).toBe("");
