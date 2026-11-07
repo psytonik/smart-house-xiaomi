@@ -169,6 +169,44 @@ function planOne(part: string): Step[] | null {
     return null;
   }
 
+  // --- TV: a category of Prisma's IPTV page («Спорт», «Кино»…), and a channel by its number inside it ---
+  // The list on the left of the IPTV page: «Все каналы» first, then these. From the playlist (where the focus starts) «down» ×(position+1)
+  // reaches a category, OK selects it and moves the focus to its first channel; inside a category the grid is numbered 1, 2, 3 … again,
+  // four columns wide, so channel N is (N-1) div 4 rows down and (N-1) mod 4 columns right.
+  const categories: Array<[RegExp, string]> = [
+    [/(?<![а-яё])(общи\S*|общая)/, "Общие"],
+    [/(?<![а-яё])новост\S*/, "Новостные"],
+    [/(?<![а-яё])(кино|фильмов\S*|киноканал\S*)/, "Кино"],
+    [/(?<![а-яё])спорт\S*/, "Спорт"],
+    [/(?<![а-яё])музык\S*/, "Музыка"],
+    [/(?<![а-яё])детск\S*/, "Детские"],
+    [/(?<![а-яё])познават\S*/, "Познавательные"],
+    [/(?<![а-яё])развлека\S*/, "Развлекательные"],
+    [/(?<![а-яё])(израил\S*|иврит\S*)/, "Израиль"],
+  ];
+  const ORDER = ["Общие", "Новостные", "Кино", "Спорт", "Музыка", "Детские", "Познавательные", "Развлекательные", "Израиль"];
+  const IPTV_WORD = /(?<![а-яё])(канал\S*|телеканал\S*|категори\S*|iptv|айпитиви)/;
+  const inCategory = categories.find(([re]) => re.test(t));
+  if (inCategory && has(t, IPTV_WORD) && has(t, /(включи|переключи|открой|покажи|давай|запусти)/)) {
+    const name = inCategory[1];
+    const n = Number(/(?<![а-яё])(?:канал|телеканал)\s+(?:номер\s+)?(\d{1,3})(?!\d)/.exec(t)?.[1] ?? 1);
+    if (n < 1 || n > 120) return [{ tool: "ask", input: {}, say: "В категории умею включать каналы с первого по сто двадцатый." }];
+    // inside a category the digits typed in the player did not move to another channel (tried on «Кино»), so the grid is walked instead
+    const toChannel: Array<{ key: "down" | "right" | "ok"; times?: number }> = [];
+    if (Math.floor((n - 1) / 4) > 0) toChannel.push({ key: "down", times: Math.floor((n - 1) / 4) });
+    if ((n - 1) % 4 > 0) toChannel.push({ key: "right", times: (n - 1) % 4 });
+    toChannel.push({ key: "ok" });
+    const said = n === 1 ? `Включаю категорию «${name}»` : `Включаю канал ${n} в категории «${name}»`;
+    return [
+      { tool: "tv_app", input: { app: "prisma", settle: { package: "top.rootu.prisma", warm: 2000, cold: 20000 } }, say: "" },
+      { tool: "tv_keys", input: { keys: [{ key: "up" }, { key: "right", times: 3 }, { key: "ok" }] }, say: "" },
+      { tool: "wait", input: { ms: 15000 }, say: "" },
+      { tool: "tv_keys", input: { keys: [{ key: "down", times: ORDER.indexOf(name) + 2 }, { key: "ok" }] }, say: "" },
+      { tool: "wait", input: { ms: 2500 }, say: "" },
+      { tool: "tv_keys", input: { keys: toChannel }, say: said },
+    ];
+  }
+
   // --- TV: a channel of Prisma's IPTV page by its number ---
   // The IPTV tab (up, right ×3, OK) opens with the focus on the playlist; «down», OK selects «Все каналы» and moves the focus to channel 1; OK
   // plays it. The IPTV player takes the number of a channel typed with the digit keys («0-9 Номер канала», read from its own hint line), so
