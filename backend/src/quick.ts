@@ -213,6 +213,13 @@ function planOne(part: string): Step[] | null {
     if (has(t, /(тише|потише|убавь|уменьши|ниже)/)) return [{ tool: "tv_key", input: { key: "volumeDown", times: big ? 6 : 3 }, say: "Сделал тише" }];
     return null;
   }
+  // "включи HDMI 2", "переключи на хдми два": the ids are fixed (hdmi1, hdmi2, av), see parseSources
+  const hdmi = t.match(/(?:hdmi|хдми|эйчдиэмай|аш ?ди ?эм ?ай)\s*(?:№\s*)?([1-4]|один|два|три|четыре)(?![а-яё\d])/);
+  if (hdmi) {
+    const n = { один: 1, два: 2, три: 3, четыре: 4 }[hdmi[1]!] ?? Number(hdmi[1]);
+    return [{ tool: "tv_source", input: { source: `hdmi${n}` }, say: `Переключаю на HDMI ${n}` }];
+  }
+  if (has(t, /(?<![a-zа-яё])(av|эй ?ви)(?![a-zа-яё])/) && has(t, /(включи|переключи|источник|вход)/)) return [{ tool: "tv_source", input: { source: "av" }, say: "Переключаю на AV" }];
   // "закрой все приложения на телевизоре": needs the TV's ADB, otherwise the API says so
   if (has(t, /(закр|заверш|останов|выключ)/) && has(t, /(?<![а-яё])приложен/) && has(t, /(все|всё|каждое)/)) return [{ tool: "tv_close_apps", input: {}, say: "Закрыл все приложения на телевизоре" }];
   if (has(t, WORDS.tv)) {

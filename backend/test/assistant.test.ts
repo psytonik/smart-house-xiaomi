@@ -474,6 +474,8 @@ describe("tv keys with the TV named", () => {
     assert.deepEqual(planQuick("нажми на телевизоре кнопку play")?.map((x) => x.input), [{ key: "playPause" }]);
     assert.deepEqual(planQuick("нажми на телевизоре плей")?.map((x) => x.input), [{ key: "playPause" }]);
     assert.deepEqual(planQuick("закрой все приложения на телевизоре")?.map((x) => x.tool), ["tv_close_apps"]);
+    assert.deepEqual(planQuick("включи hdmi 2")?.map((x) => x.input), [{ source: "hdmi2" }]);
+    assert.deepEqual(planQuick("переключи на хдми один")?.map((x) => x.input), [{ source: "hdmi1" }]);
     assert.deepEqual(planQuick("на телевизоре домой")?.map((x) => x.input), [{ key: "home" }]);
     assert.deepEqual(planQuick("в телевизоре нажми кнопку окей")?.map((x) => x.input), [{ key: "ok" }]);
   });
