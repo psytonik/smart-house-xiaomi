@@ -485,10 +485,12 @@ describe("tv keys with the TV named", () => {
     assert.deepEqual(planQuick("на телевизоре вниз 3 раза")?.map((x) => x.input), [{ key: "down", times: 3, adb: true }]);
     assert.deepEqual(planQuick("в призме вправо")?.map((x) => x.input), [{ key: "right", times: 1, adb: true }]);
     const find = planQuick("найди фильм обитель зла")!;
-    assert.equal(find[0]!.tool, "tv_app");
+    assert.deepEqual(find.map((x) => x.tool), ["tv_app", "prisma_search", "wait", "tv_keys", "wait", "tv_keys"]);
+    assert.deepEqual(find[1]!.input, { query: "обитель зла" });
     assert.match(find.at(-1)!.say, /Нашла «обитель зла»/);
-    assert.equal(planQuick("включи фильм обитель зла")!.at(-1)!.say, "Включаю «обитель зла»");
-    assert.equal(planQuick("найди фильм дюна 2")![0]!.tool, "ask", "digits cannot be typed yet");
+    assert.equal(planQuick("включи фильм брат 2")!.at(-1)!.say, "Включаю «брат 2»");
+    assert.deepEqual(planQuick("найди фильм matrix")![1]!.input, { query: "matrix" }, "Latin letters and digits are fine now");
+    assert.equal(planQuick("найди фильм a; reboot")![0]!.tool === "tv_app" && (planQuick("найди фильм a; reboot")![1]!.input as { query: string }).query, "a reboot", "shell characters are dropped");
     assert.deepEqual(planQuick("включи play")?.map((x) => x.input), [{ app: "ottplay" }]);
     assert.deepEqual(planQuick("включила tt play")?.map((x) => x.input), [{ app: "ottplay" }]);
     assert.equal(planQuick("открой оттенок"), null);

@@ -338,6 +338,8 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
       }
       return last;
     }
+    case "prisma_search":
+      return call("POST", "/api/tv/prisma/search", { query: input.query });
     case "tv_keys":
       return call("POST", "/api/tv/keys", { keys: input.keys });
     case "tv_app":

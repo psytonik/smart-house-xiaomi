@@ -194,6 +194,18 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
     })();
   };
 
+  // Prisma's search with a text (an intent with the "query" extra).
+  app.post<{ Body: { query: string } }>(
+    "/api/tv/prisma/search",
+    { schema: { body: { type: "object", additionalProperties: false, required: ["query"], properties: { query: { type: "string", minLength: 1, maxLength: 60 } } } } },
+    async (req) => {
+      if (!adb) throw new HttpError(404, "Prisma's search needs ADB: set TV_ADB in backend/.env");
+      const robot = adb;
+      await guarded(() => robot.prismaSearch(req.body.query));
+      return { ok: true };
+    },
+  );
+
   // A run of arrow/OK/Back presses in one go over ADB (typing a title into an app's search).
   app.post<{ Body: { keys: Array<{ key: "up" | "down" | "left" | "right" | "ok" | "back"; times?: number }> } }>(
     "/api/tv/keys",

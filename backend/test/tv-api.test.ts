@@ -195,6 +195,15 @@ describe("TV API with ADB (pretend TV and adb)", () => {
     assert.equal((await post("/api/tv/keys", { keys: [{ key: "ok; reboot" }] })).statusCode, 400);
   });
 
+  it("opens Prisma's search with a text by an intent, quoted for the TV's shell, and refuses anything that could break out of the quotes", async () => {
+    const ok = await post("/api/tv/prisma/search", { query: "Брат 2" });
+    assert.equal(ok.statusCode, 200);
+    assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell am start -n top.rootu.prisma/.MainActivity --es query 'Брат 2'");
+    for (const bad of ["a'; reboot; '", "$(reboot)", "a`b", "a\nb", "a&b", "a|b", "", "x".repeat(61)]) {
+      assert.equal((await post("/api/tv/prisma/search", { query: bad })).statusCode, 400, JSON.stringify(bad));
+    }
+  });
+
   it("lists Prisma as an app and opens it over ADB", async () => {
     const apps = (await app.inject({ url: "/api/tv", headers: auth })).json().apps as Array<{ id: string; label: string }>;
     assert.deepEqual(apps.map((a) => a.id), ["youtube", "netflix", "prime", "disney", "twitch", "prisma", "ottplay"]);

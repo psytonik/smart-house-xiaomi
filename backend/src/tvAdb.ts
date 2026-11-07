@@ -72,6 +72,8 @@ const KEY_TV_INPUT = 178;
 const MEDIA_PLAYER = { package: "com.tcl.ui_mediaCenter", activity: "com.tcl.ui_mediaCenter/.main.MainActivity" };
 const SOURCES_TTL_MS = 10 * 60_000;
 const COMMAND_TIMEOUT_MS = 10_000;
+/** What may be typed into Prisma's search from outside (see prismaSearch). */
+export const PRISMA_QUERY = /^[\p{L}\p{N} .,:!?-]{1,60}$/u;
 
 /** What the TV's `dumpsys tv_input` says about its inputs, as the sources a person would pick. */
 export function parseSources(dumpsys: string, mediaPlayerInstalled: boolean): Array<TvSource & { how: "key" | "passthrough" | "media"; inputId?: string; key?: number }> {
@@ -167,6 +169,16 @@ export class TvAdb {
   /** One key of the TV's remote by its Android key code, sent over ADB (some apps, Prisma among them, ignore arrows from the remote protocol). */
   async press(code: number): Promise<void> {
     await this.shell(["input", "keyevent", String(code)]);
+  }
+
+  /**
+   * Opens Prisma's search with the text already typed: Prisma's MainActivity takes a string extra "query" (found in the app's
+   * `processIntent`) and calls its Search.open({input}). The text goes into the TV's shell, so it is limited to letters, digits,
+   * spaces and a few marks, then single-quoted; nothing that could end the quotes or start a command is allowed.
+   */
+  async prismaSearch(query: string): Promise<void> {
+    if (!PRISMA_QUERY.test(query)) throw new TvError("the search text may have letters, digits, spaces and . , : ! ? - only (1-60 characters)", 400);
+    await this.shell(["am", "start", "-n", "top.rootu.prisma/.MainActivity", "--es", "query", `'${query}'`]);
   }
 
   /**
