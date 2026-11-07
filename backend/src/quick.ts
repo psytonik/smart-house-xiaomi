@@ -168,6 +168,39 @@ function planOne(part: string): Step[] | null {
     return null;
   }
 
+  // --- TV: Prisma's screen and the arrow keys, by voice ---
+  // The top bar of Prisma's home screen (checked on the TV): after "up" the focus is on «Главная», and each "right" moves one icon:
+  // Фильмы 1, Сериалы 2, IPTV 3, Настройки 4, (filter 5), поиск 6, уведомления 7. Prisma must be open on its home screen.
+  if (has(t, /(призм|prisma)/)) {
+    const bar: Array<[RegExp, number, string]> = [
+      [/(?<![а-яё])поиск/, 6, "поиск"],
+      [/(?<![а-яё])(уведомлен|колокол)/, 7, "уведомления"],
+      [/(?<![а-яё])фильм/, 1, "фильмы"],
+      [/(?<![а-яё])сериал/, 2, "сериалы"],
+      [/(?<![а-яё])(iptv|айпитив|ай пи ти ви|телевидение|каналы)/, 3, "IPTV"],
+      [/(?<![а-яё])настройк/, 4, "настройки"],
+    ];
+    for (const [re, rights, name] of bar) {
+      if (!has(t, re) || !has(t, /(нажми|открой|зайди|перейди|выбери|покажи|включи|найди)/)) continue;
+      return [
+        { tool: "tv_key", input: { key: "up" }, say: "" },
+        ...(rights > 0 ? [{ tool: "tv_key", input: { key: "right", times: rights }, say: "" }] : []),
+        { tool: "tv_key", input: { key: "ok" }, say: `Открываю ${name} в Призме` },
+      ] as Step[];
+    }
+  }
+  // Arrow keys with the TV (or an app on it) named: "на телевизоре вниз 3 раза", "в призме вправо"
+  if (has(t, /(телевизор|телик|(?<![а-яё])тв(?![а-яё])|призм|prisma|ott|плей)/) && !has(t, WORDS.camera)) {
+    const dirs: Array<[RegExp, string, string]> = [
+      [/(?<![а-яё])вверх/, "up", "Вверх"],
+      [/(?<![а-яё])вниз/, "down", "Вниз"],
+      [/(?<![а-яё])(влево|налево)/, "left", "Влево"],
+      [/(?<![а-яё])(вправо|направо)/, "right", "Вправо"],
+    ];
+    const n = Math.min(10, Number(/(\d+)/.exec(t)?.[1] ?? { один: 1, два: 2, три: 3, четыре: 4, пять: 5 }[/(?<![а-яё])(один|два|три|четыре|пять)(?![а-яё])/.exec(t)?.[1] ?? ""] ?? 1) || 1);
+    for (const [re, key, say] of dirs) if (has(t, re)) return [{ tool: "tv_key", input: { key, times: n }, say }];
+  }
+
   // --- camera ---
   if (has(t, WORDS.camera) || has(t, /(поверни|повернись|крути)/)) {
     const far = has(t, /(сильно|сильнее|намного|до конца|побольше)/);

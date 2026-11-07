@@ -395,7 +395,7 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
       const why = (out.body as { error?: string } | null)?.error;
       return { reply: `Не получилось: ${why ?? "устройство не ответило"}.`, actions };
     }
-    said.push(say);
+    if (say) said.push(say);
   }
   return { reply: said.join(". ") + ".", actions };
 }

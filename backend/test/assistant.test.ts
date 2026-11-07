@@ -480,6 +480,10 @@ describe("tv keys with the TV named", () => {
     assert.deepEqual(planQuick("открой ott player")?.map((x) => x.input), [{ app: "ottplay" }]);
     assert.deepEqual(planQuick("включила тт play")?.map((x) => x.input), [{ app: "ottplay" }]);
     assert.deepEqual(planQuick("включил вот эти play")?.map((x) => x.input), [{ app: "ottplay" }]);
+    assert.deepEqual(planQuick("нажми на поиск в призме")?.map((x) => [x.input]), [[{ key: "up" }], [{ key: "right", times: 6 }], [{ key: "ok" }]]);
+    assert.deepEqual(planQuick("в призме открой сериалы")?.map((x) => x.input), [{ key: "up" }, { key: "right", times: 2 }, { key: "ok" }]);
+    assert.deepEqual(planQuick("на телевизоре вниз 3 раза")?.map((x) => x.input), [{ key: "down", times: 3 }]);
+    assert.deepEqual(planQuick("в призме вправо")?.map((x) => x.input), [{ key: "right", times: 1 }]);
     assert.deepEqual(planQuick("включи play")?.map((x) => x.input), [{ app: "ottplay" }]);
     assert.deepEqual(planQuick("включила tt play")?.map((x) => x.input), [{ app: "ottplay" }]);
     assert.equal(planQuick("открой оттенок"), null);
