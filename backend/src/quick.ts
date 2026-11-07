@@ -35,6 +35,23 @@ const COLORS: Array<[RegExp, string, Record<string, unknown>]> = [
   [/бел/, "белым", { saturation: 0 }],
 ];
 
+const NUMBER_WORDS: Record<string, number> = {
+  один: 1, одна: 1, первый: 1, два: 2, второй: 2, три: 3, третий: 3, четыре: 4, четвертый: 4, четвёртый: 4, пять: 5, пятый: 5, шесть: 6, шестой: 6, семь: 7, седьмой: 7,
+  восемь: 8, восьмой: 8, девять: 9, девятый: 9, десять: 10, десятый: 10, одиннадцать: 11, одиннадцатый: 11, двенадцать: 12, двенадцатый: 12, тринадцать: 13,
+  тринадцатый: 13, четырнадцать: 14, четырнадцатый: 14, пятнадцать: 15, пятнадцатый: 15, шестнадцать: 16, шестнадцатый: 16, семнадцать: 17, семнадцатый: 17,
+  восемнадцать: 18, восемнадцатый: 18, девятнадцать: 19, девятнадцатый: 19, двадцать: 20, двадцатый: 20,
+};
+const NUMBER_WORD = Object.keys(NUMBER_WORDS).join("|");
+
+/** The channel number of a phrase: «канал 15», «канал пятнадцать», «девятый канал». Undefined when none is named. */
+function channelNumber(t: string): number | undefined {
+  const digits = /(?<![а-яё])(?:канал|телеканал)\s+(?:номер\s+)?(\d{1,4})(?!\d)/.exec(t)?.[1];
+  if (digits) return Number(digits);
+  const word = new RegExp(`(?<![а-яё])(?:(?:канал|телеканал)\\s+(?:номер\\s+)?(${NUMBER_WORD})|(${NUMBER_WORD})\\s+(?:канал|телеканал))(?![а-яё])`).exec(t);
+  const said = word?.[1] ?? word?.[2];
+  return said ? NUMBER_WORDS[said] : undefined;
+}
+
 const WORDS = {
   light: /(свет|лент|ламп|подсветк|освещени)/,
   on: /(включи|зажги|включить|запали)/,
@@ -172,7 +189,7 @@ function planOne(part: string): Step[] | null {
   // --- TV: a category of Prisma's IPTV page («Спорт», «Кино»…), and a channel by its number inside it ---
   // The list on the left of the IPTV page: «Все каналы» first, then these. From the playlist (where the focus starts) «down» ×(position+1)
   // reaches a category, OK selects it and moves the focus to its first channel; inside a category the grid is numbered 1, 2, 3 … again,
-  // four columns wide, so channel N is (N-1) div 4 rows down and (N-1) mod 4 columns right.
+  // the player takes the channel number typed with the digits.
   const categories: Array<[RegExp, string]> = [
     [/(?<![а-яё])(общи\S*|общая)/, "Общие"],
     [/(?<![а-яё])новост\S*/, "Новостные"],
@@ -189,13 +206,8 @@ function planOne(part: string): Step[] | null {
   const inCategory = categories.find(([re]) => re.test(t));
   if (inCategory && has(t, IPTV_WORD) && has(t, /(включи|переключи|открой|покажи|давай|запусти)/)) {
     const name = inCategory[1];
-    const n = Number(/(?<![а-яё])(?:канал|телеканал)\s+(?:номер\s+)?(\d{1,3})(?!\d)/.exec(t)?.[1] ?? 1);
-    if (n < 1 || n > 120) return [{ tool: "ask", input: {}, say: "В категории умею включать каналы с первого по сто двадцатый." }];
-    // inside a category the digits typed in the player did not move to another channel (tried on «Кино»), so the grid is walked instead
-    const toChannel: Array<{ key: "down" | "right" | "ok"; times?: number }> = [];
-    if (Math.floor((n - 1) / 4) > 0) toChannel.push({ key: "down", times: Math.floor((n - 1) / 4) });
-    if ((n - 1) % 4 > 0) toChannel.push({ key: "right", times: (n - 1) % 4 });
-    toChannel.push({ key: "ok" });
+    const n = channelNumber(t) ?? 1;
+    if (n < 1 || n > 2147) return [{ tool: "ask", input: {}, say: "Не поняла номер канала." }];
     const said = n === 1 ? `Включаю категорию «${name}»` : `Включаю канал ${n} в категории «${name}»`;
     return [
       { tool: "tv_app", input: { app: "prisma", settle: { package: "top.rootu.prisma", warm: 2000, cold: 20000 } }, say: "" },
@@ -203,7 +215,11 @@ function planOne(part: string): Step[] | null {
       { tool: "wait", input: { ms: 15000 }, say: "" },
       { tool: "tv_keys", input: { keys: [{ key: "down", times: ORDER.indexOf(name) + 2 }, { key: "ok" }] }, say: "" },
       { tool: "wait", input: { ms: 2500 }, say: "" },
-      { tool: "tv_keys", input: { keys: toChannel }, say: said },
+      // OK plays the first channel of the category. A category can be a grid of four columns or a list of rows (Новостные is a list), so
+      // channel N is not found by walking the grid; the player takes the number typed with the digits (counted inside the category,
+      // «009 / 067»), but not while its stream is still loading, hence the long wait. Two digits at least: «09».
+      { tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: n === 1 ? said : "" },
+      ...(n === 1 ? [] : [{ tool: "wait", input: { ms: 8000 }, say: "" }, { tool: "tv_keys", input: { keys: [...String(n).padStart(2, "0")].map((d) => ({ key: d })) }, say: said }]),
     ];
   }
 
@@ -212,9 +228,9 @@ function planOne(part: string): Step[] | null {
   // plays it. The IPTV player takes the number of a channel typed with the digit keys («0-9 Номер канала», read from its own hint line), so
   // any number of the playlist (here 1..2147) is a few key presses. There is no intent for IPTV, and its search needs a keyboard whose focus
   // cannot be predicted, hence the number.
-  const channel = /(?<![а-яё])(включи|переключи|открой|покажи|давай)\s+(?:на\s+)?(?:телеканал|канал)\s+(?:номер\s+)?(\d{1,4})(?![\d])/.exec(t);
-  if (channel) {
-    const n = Number(channel[2]);
+  const channelN = has(t, /(?<![а-яё])(включи|переключи|открой|покажи|давай)/) ? channelNumber(t) : undefined;
+  if (channelN !== undefined) {
+    const n = channelN;
     if (n < 1 || n > 2147) return [{ tool: "ask", input: {}, say: "В плейлисте каналы с первого по две тысячи сто сорок седьмой." }];
     return [
       { tool: "tv_app", input: { app: "prisma", settle: { package: "top.rootu.prisma", warm: 2000, cold: 20000 } }, say: "" },
@@ -223,7 +239,7 @@ function planOne(part: string): Step[] | null {
       { tool: "tv_keys", input: { keys: [{ key: "down" }, { key: "ok" }] }, say: "" },
       { tool: "wait", input: { ms: 2500 }, say: "" },
       { tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: n === 1 ? "Включаю канал 1" : "" },
-      ...(n === 1 ? [] : [{ tool: "wait", input: { ms: 4000 }, say: "" }, { tool: "tv_keys", input: { keys: [...String(n)].map((d) => ({ key: d })) }, say: `Включаю канал ${n}` }]),
+      ...(n === 1 ? [] : [{ tool: "wait", input: { ms: 6000 }, say: "" }, { tool: "tv_keys", input: { keys: [...String(n).padStart(2, "0")].map((d) => ({ key: d })) }, say: `Включаю канал ${n}` }]),
     ];
   }
 

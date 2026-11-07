@@ -132,8 +132,17 @@ export function afterWakeWord(text: string): string | null {
   // The recognizer also turns the word into real ones («Camaro», «Каммаро»): accept a first word that sounds close enough.
   const first = /^[\s,.!?-]*([a-zа-яё]+)[\s,.!?:-]*/i.exec(text);
   if (first && soundsLikeWake(first[1]!)) return text.slice(first[0].length).trim();
+  // One stray word may come before it («велосипедистов Катара включи…»): then the second word must be a clear «Капара» (not the bare «пара»).
+  const second = /^[\s,.!?-]*[a-zа-яё]{2,}[\s,.!?:-]+([a-zа-яё]+)[\s,.!?:-]*/i.exec(text);
+  if (second && (WAKE_CLEAR.test(second[1]!) || soundsLikeWake(second[1]!))) {
+    const command = text.slice(second[0].length).trim();
+    return command || null; // «скажи капара» only mentions the word
+  }
   return null;
 }
+
+/** The unambiguous spellings of the word, without the short ones that are real words («пара»). */
+const WAKE_CLEAR = /^(?:[кгх]а[пб]{1,2}[аоеи]р[а-яё]{0,3}|[ck]app?[aeo]r[a-z]{0,3})$/i;
 
 const LATIN: Record<string, string> = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "j", з: "z", и: "i", й: "i", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "c", ч: "c", ш: "s", щ: "s", ы: "i", э: "e", ю: "u", я: "a" };
 

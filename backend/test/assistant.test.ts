@@ -491,11 +491,16 @@ describe("tv keys with the TV named", () => {
     assert.equal(planQuick("включи фильм брат 2")!.at(-1)!.say, "Включаю «брат 2»");
     assert.deepEqual(planQuick("включи фильм брат 2")!.at(-1)!.input, { keys: [{ key: "down" }, { key: "ok" }], unlessPlayer: true }, "after «Смотреть»: the first source, then OK");
     // IPTV categories: the list on the left of the IPTV page, «Все каналы» first
+    // numbers said in words, before or after «канал» («девятый канал», «канал девять»)
+    assert.deepEqual(planQuick("включи новостные девятый канал")!.at(-1)!.input, { keys: [{ key: "0" }, { key: "9" }] }, "9th in a category: typed as 09");
+    assert.deepEqual(planQuick("включи канал пятнадцать")!.at(-1)!.input, { keys: [{ key: "1" }, { key: "5" }] });
+    assert.deepEqual(planQuick("включи канал 9")!.at(-1)!.input, { keys: [{ key: "0" }, { key: "9" }] }, "two digits at least");
+    assert.deepEqual(planQuick("включи третий канал в категории спорт")!.at(-1)!.input, { keys: [{ key: "0" }, { key: "3" }] });
     const sport = planQuick("включи спортивные каналы")!;
     assert.deepEqual(sport.find((x) => x.tool === "tv_keys" && (x.input.keys as Array<{ key: string }>)[0]!.key === "down")!.input, { keys: [{ key: "down", times: 5 }, { key: "ok" }] }, "«Спорт» is the fifth after the playlist: down ×5, OK");
     assert.deepEqual(sport.at(-1)!.input, { keys: [{ key: "ok" }] }, "the first channel of the category");
     assert.equal(sport.at(-1)!.say, "Включаю категорию «Спорт»");
-    assert.deepEqual(planQuick("включи канал 6 в категории кино")!.at(-1)!.input, { keys: [{ key: "down", times: 1 }, { key: "right", times: 1 }, { key: "ok" }] }, "the number counts inside the category: the grid is walked");
+    assert.deepEqual(planQuick("включи канал 6 в категории кино")!.at(-1)!.input, { keys: [{ key: "0" }, { key: "6" }] }, "the number is typed in the player and counts inside the category");
     assert.equal(planQuick("включи канал 6 в категории кино")!.at(-1)!.say, "Включаю канал 6 в категории «Кино»");
     assert.deepEqual(planQuick("покажи детские каналы")!.find((x) => x.tool === "tv_keys" && (x.input.keys as Array<{ key: string }>)[0]!.key === "down")!.input, { keys: [{ key: "down", times: 7 }, { key: "ok" }] });
     assert.equal(planQuick("включи канал 6")!.at(-2)!.tool, "wait", "without a category the number is among all channels");

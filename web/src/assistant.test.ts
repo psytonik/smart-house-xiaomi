@@ -46,6 +46,11 @@ describe("wake word", () => {
     expect(afterWakeWord("параллельно включи свет")).toBeNull();
     // the many ways the recognizer writes the one word «Капара» all lead to the command after it
     for (const w of ["капаров", "корпора", "пара", "я пара", "ко пара", "кап ара", "гапара", "хапара", "каперу", "капару", "Каппарра", "Capara", "Kapara"]) expect(afterWakeWord(`${w} включи свет`), w).toBe("включи свет");
+    // one stray word before it: the recognizer glued the end of the previous sound to the front («велосипедистов Катара включи…»)
+    expect(afterWakeWord("велосипедистов Катара Включи новостные")).toBe("Включи новостные");
+    expect(afterWakeWord("ну капара включи свет")).toBe("включи свет");
+    expect(afterWakeWord("сегодня парад включи свет")).toBeNull();
+    expect(afterWakeWord("давай пара минут")).toBeNull();
     for (const w of ["пара минут", "капля", "кабель", "парад", "парк"]) expect(afterWakeWord(`${w} включи свет`), w).toBeNull();
     expect(afterWakeWord("Катара Поверни камеру влево")).toBe("Поверни камеру влево");
     expect(afterWakeWord("Камаро, включи свет")).toBe("включи свет");
