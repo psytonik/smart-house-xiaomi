@@ -169,27 +169,51 @@ function planOne(part: string): Step[] | null {
     return null;
   }
 
-  // --- TV: find and play a movie in Prisma by its name ---
+  // --- TV: find and play a movie or a series in Prisma by its name ---
   // Prisma's MainActivity takes the search text in an intent (see TvAdb.prismaSearch), so any text works, no keyboard walking. The text
   // is typed into its search box letter by letter (about 0.9 s each); then «Поиск» is pressed (down ×3, right ×5, OK), which moves the focus
-  // into the results, and one «down» lands on the first film.
-  const movie = /(?<![а-яё])(найди|найти|поищи|включи|запусти|открой|покажи|давай)\s+(?:мне\s+)?(?:в призме\s+)?(?:фильм|кино)\s+(?:под названием\s+)?(.+?)(?:\s+в призме)?$/.exec(t);
+  // into the results, and one «down» lands on the first film (a second one, on the first series: the rows are «Фильмы», «Сериалы»).
+  const movie = /(?<![а-яё])(найди|найти|поищи|включи|запусти|открой|покажи|давай)\s+(?:мне\s+)?(?:в призме\s+)?(фильм|кино|сериал)\s+(?:под названием\s+)?(.+?)(?:\s+в призме)?$/.exec(t);
   if (movie) {
-    const title = movie[2]!.replace(/[«»"'`$;&|\\]/g, "").replace(/\s+/g, " ").trim();
-    if (!PRISMA_QUERY.test(title)) return [{ tool: "ask", input: {}, say: "Не поняла название фильма. Назовите его ещё раз." }];
+    const series = movie[2] === "сериал";
+    let rest = movie[3]!;
+    // «… 3 сезон 5 серия», «… сезон 2 серия 7», «… 5 серию»: only the season and episode numbers of the phrase, never part of the title
+    const seasonNo = /(?:(\d+)\s*сезон\S*|сезон\S*\s*(\d+))/.exec(rest);
+    const episodeNo = /(?:(\d+)\s*(?:серия|серию|серии|эпизод\S*)|(?:серия|серию|эпизод)\s*(\d+))/.exec(rest);
+    rest = rest.replace(seasonNo?.[0] ?? "", "").replace(episodeNo?.[0] ?? "", "");
+    const season = Number(seasonNo?.[1] ?? seasonNo?.[2] ?? 1);
+    const episode = Number(episodeNo?.[1] ?? episodeNo?.[2] ?? 1);
+    const title = rest.replace(/[«»"'`$;&|\\]/g, "").replace(/\s+/g, " ").trim();
+    if (!PRISMA_QUERY.test(title)) return [{ tool: "ask", input: {}, say: "Не поняла название. Назовите его ещё раз." }];
+    if (series && (episode < 1 || episode > 24)) return [{ tool: "ask", input: {}, say: "Номер серии от 1 до 24." }];
     const play = /^(включи|запусти)$/.test(movie[1]!);
     const open = play || /^(открой|покажи)$/.test(movie[1]!);
+    const kind = series ? "сериал" : "фильм";
+    // from the first episode of the source list: across a row of four, then down (the grid has four columns; «left» would open the side menu)
+    const toEpisode: Array<{ key: "down" | "right"; times?: number }> = [{ key: "down", times: 3 }];
+    if (Math.floor((episode - 1) / 4) > 0) toEpisode.push({ key: "down", times: Math.floor((episode - 1) / 4) });
+    if ((episode - 1) % 4 > 0) toEpisode.push({ key: "right", times: (episode - 1) % 4 });
+    // Prisma remembers the season last chosen for a series and opens it; picking another one by voice is not supported yet (the layout of the
+    // translation row, which the focus passes through, differs from show to show), so the phrase's season is only said aloud, not applied.
+    const what = (series && episode > 1 ? `«${title}», серия ${episode}` : `«${title}»`) + (series && season > 1 ? ". Сезон выбирать голосом пока не умею, играет тот, что выбран в Призме" : "");
     return [
       { tool: "tv_app", input: { app: "prisma", settle: { package: "top.rootu.prisma", warm: 2000, cold: 15000 } }, say: "" },
       { tool: "prisma_search", input: { query: title }, say: "" },
       { tool: "wait", input: { ms: 1500 + 900 * title.length }, say: "" },
       { tool: "tv_keys", input: { keys: [{ key: "down", times: 3 }, { key: "right", times: 5 }, { key: "ok" }] }, say: "" },
       { tool: "wait", input: { ms: 3000 }, say: "" },
-      { tool: "tv_keys", input: { keys: [{ key: "down" }] }, say: open ? "" : `Нашла «${title}» в Призме` },
-      ...(open ? [{ tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: play ? "" : `Открываю «${title}»` }] : []),
-      ...(play ? [{ tool: "wait", input: { ms: 3000 }, say: "" }, { tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: "" },
-        // «Смотреть» shows the list of sources (HDVB… «Не требуется»): one «down» onto the first, OK starts the player
-        { tool: "wait", input: { ms: 3500 }, say: "" }, { tool: "tv_keys", input: { keys: [{ key: "down" }, { key: "ok" }] }, say: `Включаю «${title}»` }] : []),
+      { tool: "tv_keys", input: { keys: [{ key: "down", times: series ? 2 : 1 }] }, say: open ? "" : `Нашла ${kind} «${title}» в Призме` },
+      ...(open ? [{ tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: play ? "" : `Открываю ${kind} «${title}»` }] : []),
+      ...(play
+        ? [
+            { tool: "wait", input: { ms: 3000 }, say: "" },
+            { tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: "" }, // «Смотреть»
+            // a film shows its sources at once; a series first loads its seasons and episodes (about 8 seconds)
+            ...(series
+              ? [{ tool: "wait", input: { ms: 9000 }, say: "" }, { tool: "tv_keys", input: { keys: [...toEpisode, { key: "ok" as const }] }, say: `Включаю ${what}` }]
+              : [{ tool: "wait", input: { ms: 3500 }, say: "" }, { tool: "tv_keys", input: { keys: [{ key: "down" }, { key: "ok" }] }, say: `Включаю ${what}` }]),
+          ]
+        : []),
     ];
   }
 
