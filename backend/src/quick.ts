@@ -213,6 +213,8 @@ function planOne(part: string): Step[] | null {
     if (has(t, /(тише|потише|убавь|уменьши|ниже)/)) return [{ tool: "tv_key", input: { key: "volumeDown", times: big ? 6 : 3 }, say: "Сделал тише" }];
     return null;
   }
+  // "закрой все приложения на телевизоре": needs the TV's ADB, otherwise the API says so
+  if (has(t, /(закр|заверш|останов|выключ)/) && has(t, /(?<![а-яё])приложен/) && has(t, /(все|всё|каждое)/)) return [{ tool: "tv_close_apps", input: {}, say: "Закрыл все приложения на телевизоре" }];
   if (has(t, WORDS.tv)) {
     if (has(t, WORDS.off) || has(t, WORDS.on)) return [{ tool: "tv_key", input: { key: "power" }, say: has(t, WORDS.off) ? "Выключаю телевизор" : "Включаю телевизор" }];
     // "нажми на телевизоре пауза", "на телевизоре домой": a remote key with the TV named

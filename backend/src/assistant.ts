@@ -32,7 +32,7 @@ export interface AssistantReply {
 
 const MAX_ROUNDS = 6;
 /** Stems of the verbs by which a reply claims something is being done or was done. */
-const CLAIMS_ACTION = /(включ|выключ|запуст|запуск|поверн|откр|переключ|начина|начал|останов|убира|убрал|сделал|делаю|постав|нажим|нажал|гашу|погас|потуш|увелич|уменьш|приглуш)/i;
+const CLAIMS_ACTION = /(включ|выключ|закр|заверш|запуст|запуск|поверн|откр|переключ|начина|начал|останов|убира|убрал|сделал|делаю|постав|нажим|нажал|гашу|погас|потуш|увелич|уменьш|приглуш)/i;
 
 /** What the microphone gives ("Выключи свет.") reads differently to a small model than what people type; make it one plain form. */
 export const plain = (text: string) => text.trim().replace(/[.!?…]+$/u, "").toLowerCase();
@@ -157,6 +157,11 @@ export const TOOLS: Anthropic.Tool[] = [
     name: "tv_app",
     description: "Открыть приложение на телевизоре.",
     input_schema: object({ app: { type: "string", enum: APP_IDS } }, ["app"]),
+  },
+  {
+    name: "tv_close_apps",
+    description: "Закрыть все запущенные приложения на телевизоре (нужен ADB). Только если просят закрыть все приложения.",
+    input_schema: object({}),
   },
   {
     name: "tv_sources",
@@ -335,6 +340,8 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
     }
     case "tv_app":
       return call("POST", "/api/tv/app", { app: input.app });
+    case "tv_close_apps":
+      return call("POST", "/api/tv/running/close", { all: true });
     case "tv_sources":
       return call("GET", "/api/tv/sources");
     case "tv_source":
@@ -394,7 +401,7 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
 }
 
 /** Tools that change something; the others only look, and are not worth remembering. */
-const DOES = new Set(["camera_move", "camera_back", "camera_turn", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source"]);
+const DOES = new Set(["camera_move", "camera_back", "camera_turn", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source", "tv_close_apps"]);
 
 /** Words that make a phrase about the camera, so a saved place named in it ("дверь") is a place to look at. */
 const CAMERA_TALK = /(камер|направь|поверни|повернись|посмотри|покажи|смотри)/;
