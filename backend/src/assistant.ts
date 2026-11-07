@@ -32,7 +32,7 @@ export interface AssistantReply {
 
 const MAX_ROUNDS = 6;
 /** Stems of the verbs by which a reply claims something is being done or was done. */
-const CLAIMS_ACTION = /(включ|выключ|закр|заверш|запуст|запуск|поверн|откр|переключ|начина|начал|останов|убира|убрал|сделал|делаю|постав|нажим|нажал|гашу|погас|потуш|увелич|уменьш|приглуш)/i;
+const CLAIMS_ACTION = /(включ|выключ|закр|заверш|вызва|открыл|запуст|запуск|поверн|откр|переключ|начина|начал|останов|убира|убрал|сделал|делаю|постав|нажим|нажал|гашу|погас|потуш|увелич|уменьш|приглуш)/i;
 
 /** What the microphone gives ("Выключи свет.") reads differently to a small model than what people type; make it one plain form. */
 export const plain = (text: string) => text.trim().replace(/[.!?…]+$/u, "").toLowerCase();
