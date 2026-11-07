@@ -117,17 +117,17 @@ export class TvAdb {
   }
 
   /** One adb command at a time, reconnecting once if the TV was not connected. */
-  private shell(args: string[]): Promise<string> {
+  private shell(args: string[], timeoutMs = COMMAND_TIMEOUT_MS): Promise<string> {
     const attempt = async (): Promise<string> => {
       if (!this.connected) await this.connect();
       try {
-        return (await run(this.adb, ["-s", this.target, "shell", ...args], { timeout: COMMAND_TIMEOUT_MS })).stdout;
+        return (await run(this.adb, ["-s", this.target, "shell", ...args], { timeout: timeoutMs })).stdout;
       } catch (e) {
         const text = `${(e as { stderr?: string }).stderr ?? ""} ${(e as Error).message}`;
         if (/not found|offline|no devices|closed|unauthorized/i.test(text)) {
           this.connected = false;
           await this.connect();
-          return (await run(this.adb, ["-s", this.target, "shell", ...args], { timeout: COMMAND_TIMEOUT_MS })).stdout;
+          return (await run(this.adb, ["-s", this.target, "shell", ...args], { timeout: timeoutMs })).stdout;
         }
         throw e;
       }
@@ -167,6 +167,24 @@ export class TvAdb {
   /** One key of the TV's remote by its Android key code, sent over ADB (some apps, Prisma among them, ignore arrows from the remote protocol). */
   async press(code: number): Promise<void> {
     await this.shell(["input", "keyevent", String(code)]);
+  }
+
+  /**
+   * Many keys in one `input keyevent` call: a call costs about a second and a half on this TV, so one per key would take minutes for a
+   * title. Keys sent back to back are lost while the focus is still moving, so harmless KEYCODE_UNKNOWN (0) presses stand in for
+   * pauses (about 60 ms each): two after a sideways move, eight after up/down, four before an OK and two after. Only whole numbers reach the shell.
+   */
+  async pressMany(codes: number[]): Promise<void> {
+    if (codes.length === 0) return;
+    const OK = 23;
+    const out: number[] = [];
+    for (const c of codes) {
+      const code = Math.trunc(c);
+      if (code === OK) out.push(0, 0, 0, 0, code, 0, 0);
+      else if (code === 19 || code === 20) out.push(code, 0, 0, 0, 0, 0, 0, 0, 0); // up/down: the focus travels farther and the screen may scroll
+      else out.push(code, 0, 0);
+    }
+    await this.shell(["input", "keyevent", ...out.map(String)], 10_000 + out.length * 150);
   }
 
   /** The apps in the TV's memory that may be closed. */

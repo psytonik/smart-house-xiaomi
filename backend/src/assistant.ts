@@ -332,12 +332,14 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
       const times = Math.min(Number(input.times ?? 1), 10);
       let last = { status: 200, body: {} as unknown };
       for (let i = 0; i < times; i++) {
-        if (i > 0) await sleep(150);
+        if (i > 0) await sleep(input.adb === true ? 250 : 150);
         last = await call("POST", "/api/tv/key", { key: input.key, ...(input.adb === true && { adb: true }) });
         if (last.status >= 400) break;
       }
       return last;
     }
+    case "tv_keys":
+      return call("POST", "/api/tv/keys", { keys: input.keys });
     case "tv_app":
       return call("POST", "/api/tv/app", { app: input.app });
     case "tv_close_apps":
@@ -415,7 +417,7 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
 }
 
 /** Tools that change something; the others only look, and are not worth remembering. */
-const DOES = new Set(["camera_move", "camera_back", "camera_turn", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_app", "tv_source", "tv_close_apps"]);
+const DOES = new Set(["camera_move", "camera_back", "camera_turn", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_keys", "tv_app", "tv_source", "tv_close_apps"]);
 
 /** Words that make a phrase about the camera, so a saved place named in it ("дверь") is a place to look at. */
 const CAMERA_TALK = /(камер|направь|поверни|повернись|посмотри|покажи|смотри)/;

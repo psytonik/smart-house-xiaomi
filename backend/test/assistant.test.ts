@@ -484,6 +484,11 @@ describe("tv keys with the TV named", () => {
     assert.deepEqual(planQuick("в призме открой сериалы")?.map((x) => x.input), [{ app: "prisma", settle: { package: "top.rootu.prisma", warm: 2000, cold: 15000 } }, { key: "up", adb: true }, { key: "right", times: 2, adb: true }, { key: "ok", adb: true }]);
     assert.deepEqual(planQuick("на телевизоре вниз 3 раза")?.map((x) => x.input), [{ key: "down", times: 3, adb: true }]);
     assert.deepEqual(planQuick("в призме вправо")?.map((x) => x.input), [{ key: "right", times: 1, adb: true }]);
+    const find = planQuick("найди фильм обитель зла")!;
+    assert.equal(find[0]!.tool, "tv_app");
+    assert.match(find.at(-1)!.say, /Нашла «обитель зла»/);
+    assert.equal(planQuick("включи фильм обитель зла")!.at(-1)!.say, "Включаю «обитель зла»");
+    assert.equal(planQuick("найди фильм дюна 2")![0]!.tool, "ask", "digits cannot be typed yet");
     assert.deepEqual(planQuick("включи play")?.map((x) => x.input), [{ app: "ottplay" }]);
     assert.deepEqual(planQuick("включила tt play")?.map((x) => x.input), [{ app: "ottplay" }]);
     assert.equal(planQuick("открой оттенок"), null);

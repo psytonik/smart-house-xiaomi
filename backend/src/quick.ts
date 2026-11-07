@@ -1,3 +1,4 @@
+import { canType, typeAndSearch, type Move } from "./prismaKeyboard.js";
 /**
  * The everyday commands, understood by rules instead of by a model: instant, the same every time, and free.
  * A phrase these rules do not fully understand returns null and goes to the model.
@@ -166,6 +167,27 @@ function planOne(part: string): Step[] | null {
     if (has(t, /(уровень|количество|подач)\S* воды|вода|воды/)) return [{ tool: "ask", input: {}, say: ASK_WATER }];
     if (has(t, /(запусти|включи|начни|начать|поехали|убери|пропылесось|пылесось|поезжай|продолжи|подмети|помой)/)) return [{ tool: "vacuum_clean", input: { text: t }, say: "Пылесос начал уборку" }];
     return null;
+  }
+
+  // --- TV: find and play a movie in Prisma by its name ---
+  // The name is typed into Prisma's search with the arrow keys over ADB (see prismaKeyboard.ts), then «Поиск» is pressed; one «down» lands on the first film.
+  const movie = /(?<![а-яё])(найди|найти|поищи|включи|запусти|открой|покажи|давай)\s+(?:мне\s+)?(?:в призме\s+)?(?:фильм|кино)\s+(?:под названием\s+)?(.+?)(?:\s+в призме)?$/.exec(t);
+  if (movie) {
+    const title = movie[2]!.replace(/[.,!?:;«»"']/g, "").replace(/\s+/g, " ").trim();
+    if (!canType(title)) return [{ tool: "ask", input: {}, say: "Пока умею искать фильмы только по названию русскими буквами. Назовите по-русски." }];
+    const play = /^(включи|запусти)$/.test(movie[1]!);
+    const open = play || /^(открой|покажи)$/.test(movie[1]!);
+    const keys = (moves: Move[]): Step[] => [{ tool: "tv_keys", input: { keys: moves.map((m) => ({ key: m.key, times: m.times })) }, say: "" }];
+    return [
+      { tool: "tv_app", input: { app: "prisma", settle: { package: "top.rootu.prisma", warm: 2000, cold: 15000 } }, say: "" },
+      { tool: "tv_keys", input: { keys: [{ key: "up" }, { key: "right", times: 6 }, { key: "ok" }] }, say: "" },
+      { tool: "wait", input: { ms: 1500 }, say: "" },
+      ...keys(typeAndSearch(title)),
+      { tool: "wait", input: { ms: 3500 }, say: "" },
+      { tool: "tv_keys", input: { keys: [{ key: "down" }] }, say: open ? "" : `Нашла «${title}» в Призме` },
+      ...(open ? [{ tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: play ? "" : `Открываю «${title}»` }] : []),
+      ...(play ? [{ tool: "wait", input: { ms: 3000 }, say: "" }, { tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: `Включаю «${title}»` }] : []),
+    ];
   }
 
   // --- TV: Prisma's screen and the arrow keys, by voice ---

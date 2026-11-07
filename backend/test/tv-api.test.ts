@@ -186,6 +186,15 @@ describe("TV API with ADB (pretend TV and adb)", () => {
     assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell input keyevent 22");
   });
 
+  it("sends a run of keys in one adb command, and only known keys", async () => {
+    const ok = await post("/api/tv/keys", { keys: [{ key: "down" }, { key: "right", times: 2 }, { key: "ok" }] });
+    assert.equal(ok.statusCode, 200);
+    assert.equal(ok.json().pressed, 4);
+    assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell input keyevent 20 0 0 0 0 0 0 0 0 22 0 0 22 0 0 0 0 0 0 23 0 0");
+    assert.equal((await post("/api/tv/keys", { keys: [{ key: "power" }] })).statusCode, 400, "only arrows, OK and back");
+    assert.equal((await post("/api/tv/keys", { keys: [{ key: "ok; reboot" }] })).statusCode, 400);
+  });
+
   it("lists Prisma as an app and opens it over ADB", async () => {
     const apps = (await app.inject({ url: "/api/tv", headers: auth })).json().apps as Array<{ id: string; label: string }>;
     assert.deepEqual(apps.map((a) => a.id), ["youtube", "netflix", "prime", "disney", "twitch", "prisma", "ottplay"]);
