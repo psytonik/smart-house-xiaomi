@@ -113,7 +113,7 @@ export type { Recognition };
  * The word that starts every command in "always listening" mode. Speech recognition spells an invented word
  * differently each time («капаров», «каппара», «кабара»…), so the first word is matched loosely: «ка», «п/б», a vowel, «р», a short ending.
  */
-const WAKE = /^[\s,.!?-]*(?:ка[пб]{1,2}[аоеи]р[а-яё]{0,3}|[ктя]а?\s*пара|[ck]app?[aeo]r[a-z]{0,3})(?![а-яёa-z])[\s,.!?:-]*/i;
+const WAKE = /^[\s,.!?-]*(?:ка[пб]{1,2}[аоеи]р[а-яё]{0,3}|(?:[ктя]а?\s*)?пара|[ck]app?[aeo]r[a-z]{0,3})(?![а-яёa-z])[\s,.!?:-]*/i;
 
 /**
  * What was said after the wake word: the command, "" when only the wake word was said, null when the phrase
