@@ -215,6 +215,14 @@ function planOne(part: string): Step[] | null {
   }
   if (has(t, WORDS.tv)) {
     if (has(t, WORDS.off) || has(t, WORDS.on)) return [{ tool: "tv_key", input: { key: "power" }, say: has(t, WORDS.off) ? "Выключаю телевизор" : "Включаю телевизор" }];
+    // "нажми на телевизоре пауза", "на телевизоре домой": a remote key with the TV named
+    const named: Array<[RegExp, string, string]> = [
+      [/(?<![а-яё])(пауз|приостанов|продолж|играй|воспроизв|плей|плэй|плей-?пауз)|(?<![a-z])(play|pause)(?![a-z])/, "playPause", "Готово"],
+      [/(?<![а-яё])(домой|главный экран)/, "home", "Домой"],
+      [/(?<![а-яё])назад/, "back", "Назад"],
+      [/(?<![а-яё])(ок|окей)(?![а-яё])/, "ok", "Готово"],
+    ];
+    for (const [re, key, say] of named) if (has(t, re)) return [{ tool: "tv_key", input: { key }, say }];
     return null;
   }
   const keys: Array<[RegExp, string, string]> = [

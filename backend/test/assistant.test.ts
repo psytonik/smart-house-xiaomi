@@ -468,6 +468,16 @@ describe("quick commands (rules, no model)", () => {
 import { AssistantMemory } from "../src/assistantMemory.js";
 import { autoTeach } from "../src/journalReport.js";
 
+describe("tv keys with the TV named", () => {
+  it("presses pause for «нажми на телевизоре пауза»", () => {
+    assert.deepEqual(planQuick("нажми на телевизоре пауза")?.map((x) => x.input), [{ key: "playPause" }]);
+    assert.deepEqual(planQuick("нажми на телевизоре кнопку play")?.map((x) => x.input), [{ key: "playPause" }]);
+    assert.deepEqual(planQuick("нажми на телевизоре плей")?.map((x) => x.input), [{ key: "playPause" }]);
+    assert.deepEqual(planQuick("на телевизоре домой")?.map((x) => x.input), [{ key: "home" }]);
+    assert.deepEqual(planQuick("в телевизоре нажми кнопку окей")?.map((x) => x.input), [{ key: "ok" }]);
+  });
+});
+
 describe("assistant learns from the household", () => {
   const brainThatActs = () =>
     scripted(message("tool_use", [{ type: "tool_use", id: "t", name: "lights_set", input: { on: true, brightness: 20 } }]), message("end_turn", [{ type: "text", text: "Включил ночник" }])).brain;
