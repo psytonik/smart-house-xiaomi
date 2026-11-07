@@ -218,7 +218,9 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
   );
 
   // A run of arrow/OK/Back presses in one go over ADB (typing a title into an app's search).
-  app.post<{ Body: { keys: Array<{ key: "up" | "down" | "left" | "right" | "ok" | "back"; times?: number }> } }>(
+  const NAV_KEYS = ["up", "down", "left", "right", "ok", "back"] as const;
+  const DIGITS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
+  app.post<{ Body: { keys: Array<{ key: (typeof NAV_KEYS)[number] | (typeof DIGITS)[number]; times?: number }> } }>(
     "/api/tv/keys",
     {
       schema: {
@@ -231,7 +233,7 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
               type: "array",
               minItems: 1,
               maxItems: 120,
-              items: { type: "object", additionalProperties: false, required: ["key"], properties: { key: { enum: ["up", "down", "left", "right", "ok", "back"] }, times: { type: "integer", minimum: 1, maximum: 30 } } },
+              items: { type: "object", additionalProperties: false, required: ["key"], properties: { key: { enum: [...NAV_KEYS, ...DIGITS] }, times: { type: "integer", minimum: 1, maximum: 30 } } },
             },
           },
         },
@@ -240,7 +242,9 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
     async (req) => {
       if (!adb) throw new HttpError(404, "typing keys needs ADB: set TV_ADB in backend/.env");
       const robot = adb;
-      const codes = req.body.keys.flatMap((k) => Array.from({ length: k.times ?? 1 }, () => KEYS[k.key]));
+      // digits are the Android codes KEYCODE_0..9 (7..16): a channel number typed into the IPTV player
+      const codeOf = (key: string) => (/^\d$/.test(key) ? 7 + Number(key) : KEYS[key as keyof typeof KEYS]);
+      const codes = req.body.keys.flatMap((k) => Array.from({ length: k.times ?? 1 }, () => codeOf(k.key)));
       if (codes.length > 400) throw new HttpError(400, "too many key presses");
       await guarded(() => robot.pressMany(codes));
       return { ok: true, pressed: codes.length };

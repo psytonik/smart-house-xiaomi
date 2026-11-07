@@ -187,6 +187,13 @@ describe("TV API with ADB (pretend TV and adb)", () => {
     assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell input keyevent 22");
   });
 
+  it("types digits over ADB (the channel number in Prisma's IPTV player)", async () => {
+    const ok = await post("/api/tv/keys", { keys: [{ key: "1" }, { key: "5" }] });
+    assert.equal(ok.statusCode, 200);
+    assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell input keyevent 8 0 0 12 0 0");
+    assert.equal((await post("/api/tv/keys", { keys: [{ key: "10" }] })).statusCode, 400);
+  });
+
   it("sends a run of keys in one adb command, and only known keys", async () => {
     const ok = await post("/api/tv/keys", { keys: [{ key: "down" }, { key: "right", times: 2 }, { key: "ok" }] });
     assert.equal(ok.statusCode, 200);

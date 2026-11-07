@@ -169,6 +169,26 @@ function planOne(part: string): Step[] | null {
     return null;
   }
 
+  // --- TV: a channel of Prisma's IPTV page by its number ---
+  // The IPTV tab (up, right ×3, OK) opens with the focus on the playlist; «down», OK selects «Все каналы» and moves the focus to channel 1; OK
+  // plays it. The IPTV player takes the number of a channel typed with the digit keys («0-9 Номер канала», read from its own hint line), so
+  // any number of the playlist (here 1..2147) is a few key presses. There is no intent for IPTV, and its search needs a keyboard whose focus
+  // cannot be predicted, hence the number.
+  const channel = /(?<![а-яё])(включи|переключи|открой|покажи|давай)\s+(?:на\s+)?(?:телеканал|канал)\s+(?:номер\s+)?(\d{1,4})(?![\d])/.exec(t);
+  if (channel) {
+    const n = Number(channel[2]);
+    if (n < 1 || n > 2147) return [{ tool: "ask", input: {}, say: "В плейлисте каналы с первого по две тысячи сто сорок седьмой." }];
+    return [
+      { tool: "tv_app", input: { app: "prisma", settle: { package: "top.rootu.prisma", warm: 2000, cold: 20000 } }, say: "" },
+      { tool: "tv_keys", input: { keys: [{ key: "up" }, { key: "right", times: 3 }, { key: "ok" }] }, say: "" },
+      { tool: "wait", input: { ms: 15000 }, say: "" },
+      { tool: "tv_keys", input: { keys: [{ key: "down" }, { key: "ok" }] }, say: "" },
+      { tool: "wait", input: { ms: 2500 }, say: "" },
+      { tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: n === 1 ? "Включаю канал 1" : "" },
+      ...(n === 1 ? [] : [{ tool: "wait", input: { ms: 4000 }, say: "" }, { tool: "tv_keys", input: { keys: [...String(n)].map((d) => ({ key: d })) }, say: `Включаю канал ${n}` }]),
+    ];
+  }
+
   // --- TV: find and play a movie or a series in Prisma by its name ---
   // Prisma's MainActivity takes the search text in an intent (see TvAdb.prismaSearch), so any text works, no keyboard walking. The text
   // is typed into its search box letter by letter (about 0.9 s each); then «Поиск» is pressed (down ×3, right ×5, OK), which moves the focus

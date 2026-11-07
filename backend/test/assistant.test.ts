@@ -490,6 +490,13 @@ describe("tv keys with the TV named", () => {
     assert.match(find.at(-1)!.say, /Нашла фильм «обитель зла»/);
     assert.equal(planQuick("включи фильм брат 2")!.at(-1)!.say, "Включаю «брат 2»");
     assert.deepEqual(planQuick("включи фильм брат 2")!.at(-1)!.input, { keys: [{ key: "down" }, { key: "ok" }], unlessPlayer: true }, "after «Смотреть»: the first source, then OK");
+    const channel = planQuick("включи канал 15")!;
+    assert.equal(channel[0]!.tool, "tv_app");
+    assert.deepEqual(channel.at(-1)!.input, { keys: [{ key: "1" }, { key: "5" }] }, "the digits of the number go to the IPTV player");
+    assert.equal(channel.at(-1)!.say, "Включаю канал 15");
+    assert.equal(planQuick("включи канал 1")!.at(-1)!.tool === "tv_keys" && planQuick("включи канал 1")!.at(-2)!.tool, "wait", "channel 1 is the one that starts first: no digits");
+    assert.deepEqual(planQuick("переключи на канал 2147")!.at(-1)!.input, { keys: [{ key: "2" }, { key: "1" }, { key: "4" }, { key: "7" }] });
+    assert.equal(planQuick("включи канал 5000")![0]!.tool, "ask", "the playlist has 2147 channels");
     assert.deepEqual(planQuick("найди фильм matrix")![1]!.input, { query: "matrix" }, "Latin letters and digits are fine now");
     assert.equal(planQuick("найди фильм a; reboot")![0]!.tool === "tv_app" && (planQuick("найди фильм a; reboot")![1]!.input as { query: string }).query, "a reboot", "shell characters are dropped");
     const show = planQuick("включи сериал друзья")!;

@@ -379,9 +379,9 @@ async function runSteps(steps: Step[], call: ApiCall, pause: (ms: number) => Pro
       }
       step.input = { keys: step.input.keys };
     }
-    // A pause between steps (an app needs time to open before it gets keys); never more than 10 seconds.
+    // A pause between steps (an app needs time to open before it gets keys); never more than 20 seconds.
     if (step.tool === "wait") {
-      await pause(Math.min(10_000, Number(step.input.ms) || 0));
+      await pause(Math.min(20_000, Number(step.input.ms) || 0));
       continue;
     }
     let tool = step.tool;
