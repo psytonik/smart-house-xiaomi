@@ -100,7 +100,7 @@ describe("Xiaomi cloud client", () => {
   });
 
   it("takes the account and device ids from a robot file name", () => {
-    assert.deepEqual(idsFromObjectName("6674200535/447497076/9"), { uid: "6674200535", did: "447497076" });
+    assert.deepEqual(idsFromObjectName("1000000001/447497076/9"), { uid: "1000000001", did: "447497076" });
     assert.equal(idsFromObjectName("nope"), undefined);
     assert.equal(idsFromObjectName("../../etc/9"), undefined);
   });

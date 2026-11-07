@@ -51,9 +51,9 @@ describe("infrared frame", () => {
 
   it("hands the phone the carrier and the frame through adb, without a shell", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ir-"));
-    await sendIrWake(fakeAdb(dir, "Broadcast completed: result=1"), "cyijxoxg6trs996t");
+    await sendIrWake(fakeAdb(dir, "Broadcast completed: result=1"), "ABCDEF0123456789");
     const args = readFileSync(join(dir, "args"), "utf8").trim().split("\n");
-    assert.deepEqual(args.slice(0, 4), ["-s", "cyijxoxg6trs996t", "shell", "am"]);
+    assert.deepEqual(args.slice(0, 4), ["-s", "ABCDEF0123456789", "shell", "am"]);
     assert.equal(args[args.indexOf("--ei") + 2], String(CARRIER_HZ));
     assert.equal(args[args.indexOf("--es") + 2], rcaTimings(0xf, 0xd5).join(","));
     rmSync(dir, { recursive: true, force: true });
@@ -70,7 +70,7 @@ describe("infrared frame", () => {
   it("sends the infrared frame for Power while the TV does not answer, and falls back to the packet", async () => {
     const dir = mkdtempSync(join(tmpdir(), "ir-"));
     const adb = fakeAdb(dir, "x");
-    const env = { TV_IP: "127.0.0.1", TV_IR_PHONE: "phone1", TV_ADB_PATH: adb, TV_MAC: "d0:76:02:eb:6c:b9" };
+    const env = { TV_IP: "127.0.0.1", TV_IR_PHONE: "phone1", TV_ADB_PATH: adb, TV_MAC: "aa:bb:cc:00:00:01" };
     const irs: string[] = [];
     const packets: string[][] = [];
     const app = Fastify();
@@ -84,7 +84,7 @@ describe("infrared frame", () => {
     const failing = Fastify();
     tvRoutes(failing, { cfg: testConfig({ dataDir: dir }) } as never, env, { sendWake: async (macs) => void packets.push(macs), sendIr: async () => { throw new Error("phone unplugged"); }, awake: async () => false });
     assert.deepEqual((await failing.inject({ method: "POST", url: "/api/tv/key", payload: { key: "power" } })).json(), { ok: true, woke: true });
-    assert.deepEqual(packets, [["d07602eb6cb9"]]); // the phone was not there: the wake-up packet instead
+    assert.deepEqual(packets, [["aabbcc000001"]]); // the phone was not there: the wake-up packet instead
     await failing.close();
     rmSync(dir, { recursive: true, force: true });
   });

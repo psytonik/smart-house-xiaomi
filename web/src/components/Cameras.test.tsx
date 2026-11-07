@@ -45,20 +45,20 @@ describe("Cameras", () => {
   it("lists the cameras in go2rtc and says which one the app shows", async () => {
     vi.mocked(api.getCameras).mockResolvedValue({
       streams: [{ name: "garage", active: false }, { name: "psytonik_base", active: true }],
-      accounts: ["6674200535"],
+      accounts: ["1000000001"],
     });
     render_();
     expect(await screen.findByText("psytonik_base")).toBeTruthy();
     expect(screen.getByText("Shown in this app")).toBeTruthy();
     expect(screen.getByText("Ready in go2rtc")).toBeTruthy();
-    expect(screen.getByText(/signed in to mi home \(account 6674200535\)/i)).toBeTruthy();
+    expect(screen.getByText(/signed in to mi home \(account 1000000001\)/i)).toBeTruthy();
   });
 
   it("asks to sign in first when there is no account, and goes on to the cameras after it", async () => {
     vi.mocked(api.xiaomiLogin).mockResolvedValue({ status: "ok" });
     vi.mocked(api.getCameras)
       .mockResolvedValueOnce({ streams: [], accounts: [] })
-      .mockResolvedValue({ streams: [], accounts: ["6674200535"] });
+      .mockResolvedValue({ streams: [], accounts: ["1000000001"] });
     render_();
     fireEvent.click(await screen.findByRole("button", { name: "Add a camera" }));
 
@@ -80,7 +80,7 @@ describe("Cameras", () => {
       .mockResolvedValueOnce({ status: "ok" });
     vi.mocked(api.getCameras)
       .mockResolvedValueOnce({ streams: [], accounts: [] })
-      .mockResolvedValue({ streams: [], accounts: ["6674200535"] });
+      .mockResolvedValue({ streams: [], accounts: ["1000000001"] });
     render_();
     fireEvent.click(await screen.findByRole("button", { name: "Add a camera" }));
     type(/email, phone/i, "me@example.com");
@@ -123,7 +123,7 @@ describe("Cameras", () => {
 
   describe("with a signed-in account", () => {
     beforeEach(() => {
-      vi.mocked(api.getCameras).mockResolvedValue({ streams: [{ name: "psytonik_base", active: true }], accounts: ["6674200535"] });
+      vi.mocked(api.getCameras).mockResolvedValue({ streams: [{ name: "psytonik_base", active: true }], accounts: ["1000000001"] });
     });
 
     it("suggests a name from the camera's name and adds the camera with its region and device", async () => {
@@ -134,7 +134,7 @@ describe("Cameras", () => {
       expect(input.value).toBe("living-room");
 
       fireEvent.click(screen.getByRole("button", { name: "Add" }));
-      await waitFor(() => expect(api.addCamera).toHaveBeenCalledWith({ account: "6674200535", region: "de", did: "1001", name: "living-room" }));
+      await waitFor(() => expect(api.addCamera).toHaveBeenCalledWith({ account: "1000000001", region: "de", did: "1001", name: "living-room" }));
       expect(await screen.findByText(/added as/i)).toBeTruthy();
       expect(screen.getByText(/this app still shows and records/i).textContent).toContain("psytonik_base");
     });

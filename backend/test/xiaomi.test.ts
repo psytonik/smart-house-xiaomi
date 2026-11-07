@@ -11,7 +11,7 @@ import { testConfig } from "./helpers.js";
 
 const TOKEN = "t".repeat(24);
 const auth = { authorization: `Bearer ${TOKEN}` };
-const SRC = "xiaomi://6674200535:de@192.168.1.20?did=1001&model=chuangmi.camera.046c04";
+const SRC = "xiaomi://1000000001:de@192.168.1.20?did=1001&model=chuangmi.camera.046c04";
 
 describe("camera setup API", () => {
   let mock: Server;
@@ -30,7 +30,7 @@ describe("camera setup API", () => {
       req.on("end", () => {
         const json = (status: number, v: unknown) => res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(v));
         if (url.pathname === "/api/xiaomi" && req.method === "GET") {
-          if (!url.searchParams.has("id")) return json(200, ["6674200535"]);
+          if (!url.searchParams.has("id")) return json(200, ["1000000001"]);
           const region = url.searchParams.get("region");
           if (region !== "de") return res.writeHead(404).end("no sources");
           return json(200, {
@@ -38,7 +38,7 @@ describe("camera setup API", () => {
               { name: "Living room", info: "ip: 192.168.1.20, mac: AA", url: SRC },
               // go2rtc would never list this, but whatever it lists must be checked before it is trusted
               { name: "Odd", info: "", url: "exec:rm -rf /" },
-              { name: "Bad did", info: "", url: "xiaomi://6674200535:de@1.1.1.1?did=../x&model=m" },
+              { name: "Bad did", info: "", url: "xiaomi://1000000001:de@1.1.1.1?did=../x&model=m" },
             ],
           });
         }
@@ -83,7 +83,7 @@ describe("camera setup API", () => {
 
   it("lists stream names and signed-in accounts, never sources", async () => {
     const res = await app.inject({ url: "/api/cameras", headers: auth });
-    assert.deepEqual(res.json(), { streams: [{ name: "cam", active: true }], accounts: ["6674200535"] });
+    assert.deepEqual(res.json(), { streams: [{ name: "cam", active: true }], accounts: ["1000000001"] });
   });
 
   it("signs in with the form go2rtc expects", async () => {
@@ -123,7 +123,7 @@ describe("camera setup API", () => {
   });
 
   it("lists cameras of an account without exposing the source", async () => {
-    const res = await app.inject({ url: "/api/xiaomi/devices?account=6674200535&region=de", headers: auth });
+    const res = await app.inject({ url: "/api/xiaomi/devices?account=1000000001&region=de", headers: auth });
     assert.equal(res.statusCode, 200);
     assert.deepEqual(res.json(), { devices: [{ did: "1001", name: "Living room", model: "chuangmi.camera.046c04", ip: "192.168.1.20" }] });
     assert.ok(!res.body.includes("xiaomi://"), "no source in the answer");
@@ -131,15 +131,15 @@ describe("camera setup API", () => {
   });
 
   it("an account with no camera in the region is an empty list; bad parameters are refused", async () => {
-    assert.deepEqual((await app.inject({ url: "/api/xiaomi/devices?account=6674200535&region=us", headers: auth })).json(), { devices: [] });
-    assert.equal((await app.inject({ url: "/api/xiaomi/devices?account=6674200535&region=mars", headers: auth })).statusCode, 400);
+    assert.deepEqual((await app.inject({ url: "/api/xiaomi/devices?account=1000000001&region=us", headers: auth })).json(), { devices: [] });
+    assert.equal((await app.inject({ url: "/api/xiaomi/devices?account=1000000001&region=mars", headers: auth })).statusCode, 400);
     assert.equal((await app.inject({ url: "/api/xiaomi/devices?account=a%26b&region=de", headers: auth })).statusCode, 400);
     assert.equal((await app.inject({ url: "/api/xiaomi/devices?region=de", headers: auth })).statusCode, 400);
   });
 
   it("adds a camera using the source go2rtc itself listed", async () => {
     puts.length = 0;
-    const res = await app.inject({ method: "POST", url: "/api/cameras", headers: auth, payload: { account: "6674200535", region: "de", did: "1001", name: "living-room" } });
+    const res = await app.inject({ method: "POST", url: "/api/cameras", headers: auth, payload: { account: "1000000001", region: "de", did: "1001", name: "living-room" } });
     assert.equal(res.statusCode, 201);
     assert.deepEqual(res.json(), { name: "living-room", active: false });
     assert.deepEqual(puts, [`living-room <- ${SRC}`]);
@@ -149,7 +149,7 @@ describe("camera setup API", () => {
 
   it("never takes a source from the browser: an extra `src` is dropped, go2rtc's own source is used", async () => {
     puts.length = 0;
-    const res = await app.inject({ method: "POST", url: "/api/cameras", headers: auth, payload: { account: "6674200535", region: "de", did: "1001", name: "second", src: "exec:id" } });
+    const res = await app.inject({ method: "POST", url: "/api/cameras", headers: auth, payload: { account: "1000000001", region: "de", did: "1001", name: "second", src: "exec:id" } });
     assert.equal(res.statusCode, 201);
     assert.deepEqual(puts, [`second <- ${SRC}`]);
   });
@@ -157,10 +157,10 @@ describe("camera setup API", () => {
   it("refuses to overwrite an existing camera, an unknown device and a bad name", async () => {
     puts.length = 0;
     const add = (payload: object) => app.inject({ method: "POST", url: "/api/cameras", headers: auth, payload });
-    assert.equal((await add({ account: "6674200535", region: "de", did: "1001", name: "cam" })).statusCode, 409, "the camera the app uses stays as it is");
-    assert.equal((await add({ account: "6674200535", region: "de", did: "9999", name: "other" })).statusCode, 404);
+    assert.equal((await add({ account: "1000000001", region: "de", did: "1001", name: "cam" })).statusCode, 409, "the camera the app uses stays as it is");
+    assert.equal((await add({ account: "1000000001", region: "de", did: "9999", name: "other" })).statusCode, 404);
     for (const name of ["Cam", "a b", "../x", "", "-x", "x".repeat(41)]) {
-      assert.equal((await add({ account: "6674200535", region: "de", did: "1001", name })).statusCode, 400, name);
+      assert.equal((await add({ account: "1000000001", region: "de", did: "1001", name })).statusCode, 400, name);
     }
     assert.deepEqual(puts, []);
   });

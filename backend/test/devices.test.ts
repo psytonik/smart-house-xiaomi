@@ -127,8 +127,8 @@ describe("envDevices", () => {
     assert.ok(!JSON.stringify(list).includes(TOKEN));
   });
   it("shows the camera's address and own id when go2rtc tells them", () => {
-    const cam = envDevices(cfg, {}, { host: "10.0.0.5", did: "938662225" }).find((d) => d.id === "env-camera");
-    assert.deepEqual([cam?.host, cam?.did], ["10.0.0.5", "938662225"]);
+    const cam = envDevices(cfg, {}, { host: "10.0.0.5", did: "100000002" }).find((d) => d.id === "env-camera");
+    assert.deepEqual([cam?.host, cam?.did], ["10.0.0.5", "100000002"]);
   });
   it("lists only the camera when nothing else is set", () => {
     assert.deepEqual(envDevices({ lightIp: undefined, stream: "cam" }, {}).map((d) => d.id), ["env-camera"]);
@@ -168,11 +168,11 @@ describe("scanners", () => {
     hello.writeUInt16BE(0x2131, 0);
     hello.writeUInt16BE(32, 2);
     hello.writeUInt32BE(0, 4);
-    hello.writeUInt32BE(938662225, 8);
+    hello.writeUInt32BE(100000002, 8);
     const dev = await fakeDevice((msg) => (msg.length === 32 && msg.readUInt16BE(0) === 0x2131 ? hello : undefined));
     live.push(dev.close);
     const found = await scanMiio({ broadcast: "127.0.0.1", port: dev.port, timeoutMs: 600 });
-    assert.deepEqual(found, [{ host: "127.0.0.1", did: "938662225" }]);
+    assert.deepEqual(found, [{ host: "127.0.0.1", did: "100000002" }]);
 
     const junk = await fakeDevice(() => Buffer.from("hello there"));
     live.push(junk.close);
@@ -357,8 +357,8 @@ describe("XiaomiSetup.cameraIdentity", () => {
   });
 
   it("takes the address and the id from the source of a stream that is not connected, and never returns the token", async () => {
-    const got = await identity({ cam: { producers: [{ url: "xiaomi://6674200535:cn@10.0.0.5?did=938662225&model=chuangmi.camera.029a02&token=SECRET" }] } });
-    assert.deepEqual(got, { host: "10.0.0.5", did: "938662225" });
+    const got = await identity({ cam: { producers: [{ url: "xiaomi://1000000001:cn@10.0.0.5?did=100000002&model=chuangmi.camera.029a02&token=SECRET" }] } });
+    assert.deepEqual(got, { host: "10.0.0.5", did: "100000002" });
     assert.ok(!JSON.stringify(got).includes("SECRET"));
   });
 
