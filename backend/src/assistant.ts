@@ -203,7 +203,7 @@ function tidyLight(patch: Record<string, unknown>): Record<string, unknown> {
  */
 export const DEGREES_PER_UNIT = 3.55;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 interface CameraPos {
   angle: number;
@@ -364,15 +364,24 @@ async function roomsIn(text: string, call: ApiCall): Promise<string[]> {
 }
 
 /** Does the steps one after another and reports in words; stops at the first one that fails. */
-async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
+async function runSteps(steps: Step[], call: ApiCall, pause: (ms: number) => Promise<void> = sleep): Promise<AssistantReply> {
   const actions: AssistantReply["actions"] = [];
   const said: string[] = [];
   for (const step of steps) {
     // A question back to the person: nothing is done, and the next phrase is the answer.
     if (step.tool === "ask") return { reply: step.say, actions };
+    // Keys meant for a list that may not be there: «Смотреть» of a series with progress starts the player at once, and keys sent into it would pause it.
+    if (step.tool === "tv_keys" && step.input.unlessPlayer === true) {
+      const front = await call("GET", "/api/tv/foreground").catch(() => undefined);
+      if (/PlayerActivity/.test(String((front?.body as { window?: string } | undefined)?.window ?? ""))) {
+        if (step.say) said.push(step.say);
+        continue;
+      }
+      step.input = { keys: step.input.keys };
+    }
     // A pause between steps (an app needs time to open before it gets keys); never more than 10 seconds.
     if (step.tool === "wait") {
-      await new Promise((r) => setTimeout(r, Math.min(10_000, Number(step.input.ms) || 0)));
+      await pause(Math.min(10_000, Number(step.input.ms) || 0));
       continue;
     }
     let tool = step.tool;
@@ -403,7 +412,7 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
     } catch (e) {
       out = { status: 500, body: { error: e instanceof Error ? e.message : String(e) } };
     }
-    if (settle && out.status < 400) await new Promise((r) => setTimeout(r, wasRunning ? settle.warm : settle.cold));
+    if (settle && out.status < 400) await pause(wasRunning ? settle.warm : settle.cold);
     const ok = out.status < 400;
     actions.push({ tool, input, ok });
     // The weather needs to know where the house is: ask once, and the next phrase is the answer.
@@ -444,7 +453,7 @@ const NOT_UNDERSTOOD = /(не (могу|знаю|понял|поняла|уме�
 const CORRECTION = /^(?:нет|не то|не так|неправильно|не надо|отмена|отмени)(?![а-яё])/u;
 
 /** Understands one spoken phrase (with the recent turns for context) and does it. */
-export async function runAssistant(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[]; memory?: AssistantMemory }): Promise<AssistantReply> {
+export async function runAssistant(opts: { brain: Brain; model: string; call: ApiCall; text: string; history?: Turn[]; memory?: AssistantMemory; /** Replaces the real waits between steps (tests). */ pause?: (ms: number) => Promise<void> }): Promise<AssistantReply> {
   const phrase = plain(opts.text);
   const { memory } = opts;
   if (CORRECTION.test(phrase)) memory?.correction();
@@ -456,7 +465,7 @@ export async function runAssistant(opts: { brain: Brain; model: string; call: Ap
   const steps = taught ?? planFollowUp(phrase, lastSaid) ?? (await placeInPhrase(phrase, opts.call)) ?? planQuick(phrase);
   let via: "rules" | "learned" | "model" = taught ? "learned" : "rules";
   let result: AssistantReply;
-  if (steps) result = await runSteps(steps, opts.call);
+  if (steps) result = await runSteps(steps, opts.call, opts.pause);
   else {
     via = "model";
     result = await askModel(opts);

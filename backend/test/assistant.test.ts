@@ -489,14 +489,14 @@ describe("tv keys with the TV named", () => {
     assert.deepEqual(find[1]!.input, { query: "обитель зла" });
     assert.match(find.at(-1)!.say, /Нашла фильм «обитель зла»/);
     assert.equal(planQuick("включи фильм брат 2")!.at(-1)!.say, "Включаю «брат 2»");
-    assert.deepEqual(planQuick("включи фильм брат 2")!.at(-1)!.input, { keys: [{ key: "down" }, { key: "ok" }] }, "after «Смотреть»: the first source, then OK");
+    assert.deepEqual(planQuick("включи фильм брат 2")!.at(-1)!.input, { keys: [{ key: "down" }, { key: "ok" }], unlessPlayer: true }, "after «Смотреть»: the first source, then OK");
     assert.deepEqual(planQuick("найди фильм matrix")![1]!.input, { query: "matrix" }, "Latin letters and digits are fine now");
     assert.equal(planQuick("найди фильм a; reboot")![0]!.tool === "tv_app" && (planQuick("найди фильм a; reboot")![1]!.input as { query: string }).query, "a reboot", "shell characters are dropped");
     const show = planQuick("включи сериал друзья")!;
     assert.deepEqual(show[1]!.input, { query: "друзья" });
     assert.deepEqual(show.find((x) => x.tool === "tv_keys" && (x.input.keys as Array<{ key: string; times?: number }>)[0]!.key === "down" && (x.input.keys as Array<{ times?: number }>)[0]!.times === 2)!.input, { keys: [{ key: "down", times: 2 }] }, "the first series is one row below the first film");
-    assert.deepEqual(show.at(-1)!.input, { keys: [{ key: "down", times: 3 }, { key: "ok" }] }, "the first episode");
-    assert.deepEqual(planQuick("включи сериал друзья 6 серия")!.at(-1)!.input, { keys: [{ key: "down", times: 3 }, { key: "down", times: 1 }, { key: "right", times: 1 }, { key: "ok" }] }, "episode 6 is in the second row, the second column");
+    assert.deepEqual(show.at(-1)!.input, { keys: [{ key: "down", times: 3 }, { key: "ok" }], unlessPlayer: true }, "the first episode");
+    assert.deepEqual(planQuick("включи сериал друзья 6 серия")!.at(-1)!.input, { keys: [{ key: "down", times: 3 }, { key: "down", times: 1 }, { key: "right", times: 1 }, { key: "ok" }], unlessPlayer: true }, "episode 6 is in the second row, the second column");
     assert.match(planQuick("включи сериал друзья серия 3")!.at(-1)!.say, /серия 3/);
     assert.match(planQuick("включи сериал друзья 2 сезон 4 серия")!.at(-1)!.say, /серия 4. Сезон выбирать голосом пока не умею/);
     assert.equal(planQuick("найди сериал друзья")!.at(-1)!.say, "Нашла сериал «друзья» в Призме");
@@ -505,6 +505,26 @@ describe("tv keys with the TV named", () => {
     assert.equal(planQuick("открой оттенок"), null);
     assert.deepEqual(planQuick("на телевизоре домой")?.map((x) => x.input), [{ key: "home" }]);
     assert.deepEqual(planQuick("в телевизоре нажми кнопку окей")?.map((x) => x.input), [{ key: "ok" }]);
+  });
+});
+
+describe("keys for a list are not pressed into a player that is already on", () => {
+  it("skips the step when PlayerActivity is in front, and sends it otherwise", async () => {
+    const run = async (front: string) => {
+      const sent: string[] = [];
+      const call: ApiCall = async (m, u, b) => {
+        if (u === "/api/tv/foreground") return { status: 200, body: { window: front } };
+        sent.push(`${m} ${u} ${JSON.stringify(b)}`);
+        return { status: 200, body: {} };
+      };
+      const never: Brain = { messages: { create: async () => assert.fail("rules only") } };
+      await runAssistant({ brain: never, model: "m", call, text: "включи сериал друзья 1 серия", pause: async () => undefined });
+      return sent.filter((x) => x.includes("/api/tv/keys"));
+    };
+    const withList = await run("top.rootu.prisma/top.rootu.prisma.MainActivity");
+    assert.ok(withList.some((x) => x.includes('"times":3') && !x.includes("unlessPlayer")), "list keys are sent, without the internal flag");
+    const withPlayer = await run("top.rootu.prisma/com.brouken.player.PlayerActivity");
+    assert.equal(withPlayer.length, withList.length - 1, "the list step is skipped");
   });
 });
 

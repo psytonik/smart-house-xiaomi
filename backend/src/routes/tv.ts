@@ -194,6 +194,17 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
     })();
   };
 
+  // Which window is in front.
+  app.get("/api/tv/foreground", async () => {
+    if (!adb) throw new HttpError(404, "the front window needs ADB: set TV_ADB in backend/.env");
+    const robot = adb;
+    let window = "";
+    await guarded(async () => {
+      window = await robot.foreground();
+    });
+    return { window };
+  });
+
   // Prisma's search with a text (an intent with the "query" extra).
   app.post<{ Body: { query: string } }>(
     "/api/tv/prisma/search",

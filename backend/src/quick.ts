@@ -210,8 +210,8 @@ function planOne(part: string): Step[] | null {
             { tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: "" }, // «Смотреть»
             // a film shows its sources at once; a series first loads its seasons and episodes (about 8 seconds)
             ...(series
-              ? [{ tool: "wait", input: { ms: 9000 }, say: "" }, { tool: "tv_keys", input: { keys: [...toEpisode, { key: "ok" as const }] }, say: `Включаю ${what}` }]
-              : [{ tool: "wait", input: { ms: 3500 }, say: "" }, { tool: "tv_keys", input: { keys: [{ key: "down" }, { key: "ok" }] }, say: `Включаю ${what}` }]),
+              ? [{ tool: "wait", input: { ms: 9000 }, say: "" }, { tool: "tv_keys", input: { keys: [...toEpisode, { key: "ok" as const }], unlessPlayer: true }, say: `Включаю ${what}` }]
+              : [{ tool: "wait", input: { ms: 3500 }, say: "" }, { tool: "tv_keys", input: { keys: [{ key: "down" }, { key: "ok" }], unlessPlayer: true }, say: `Включаю ${what}` }]),
           ]
         : []),
     ];

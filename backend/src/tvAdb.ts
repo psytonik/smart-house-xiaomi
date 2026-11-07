@@ -171,6 +171,12 @@ export class TvAdb {
     await this.shell(["input", "keyevent", String(code)]);
   }
 
+  /** The window in front, as «package/Activity» ("" if it cannot be read): tells a started player from a list of sources. */
+  async foreground(): Promise<string> {
+    const out = await this.shell(["dumpsys", "window"], 20_000);
+    return /mCurrentFocus=Window\{\S+ \S+ ([^\s}]+)\}/.exec(out)?.[1] ?? "";
+  }
+
   /**
    * Opens Prisma's search with the text already typed: Prisma's MainActivity takes a string extra "query" (found in the app's
    * `processIntent`) and calls its Search.open({input}). The text goes into the TV's shell, so it is limited to letters, digits,

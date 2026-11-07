@@ -147,6 +147,7 @@ describe("TV API with ADB (pretend TV and adb)", () => {
       "  mHardwareInputIdMap: deviceId -> inputId",
       "    1413742848: com.tcl.tvinput/.TDTVInputService/HW1413742848",
       "    1413744128: com.tcl.tvinput/.passthroughinput.TvPassThroughService/HW1413744128",
+      "  mCurrentFocus=Window{32292ae u0 top.rootu.prisma/com.brouken.player.PlayerActivity}",
     ].join("\n");
     writeFileSync(join(dir, "dump.txt"), dump);
     writeFileSync(join(dir, "ps.txt"), "USER PID RSS NAME\nu0_a104 1 50000 top.rootu.prisma\nu0_a56 2 38000 com.google.android.apps.mediashell\nu0_a102 3 40000 com.gathin.tvhome\n");
@@ -202,6 +203,13 @@ describe("TV API with ADB (pretend TV and adb)", () => {
     for (const bad of ["a'; reboot; '", "$(reboot)", "a`b", "a\nb", "a&b", "a|b", "", "x".repeat(61)]) {
       assert.equal((await post("/api/tv/prisma/search", { query: bad })).statusCode, 400, JSON.stringify(bad));
     }
+  });
+
+  it("says which window is in front (so the assistant does not press keys into a player that has already started)", async () => {
+    const res = await app.inject({ url: "/api/tv/foreground", headers: auth });
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(res.json(), { window: "top.rootu.prisma/com.brouken.player.PlayerActivity" });
+    assert.equal((await app.inject({ url: "/api/tv/foreground" })).statusCode, 401);
   });
 
   it("lists Prisma as an app and opens it over ADB", async () => {
