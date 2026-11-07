@@ -114,18 +114,18 @@ export type { Recognition };
  * The word that starts every command in "always listening" mode. Speech recognition spells an invented word
  * differently each time («капаров», «каппара», «кабара»…), so the first word is matched loosely: «ка», «п/б», a vowel, «р», a short ending.
  */
-const WAKE = /^[\s,.!?-]*(?:ка[пб]{1,2}[аоеи]р[а-яё]{0,3}|(?:[ктя]а?\s*)?пара|[ck]app?[aeo]r[a-z]{0,3})(?![а-яёa-z])[\s,.!?:-]*/i;
+const WAKE = /^[\s,.!?-]*(?:[кгх]а[пб]{1,2}\s?[аоеи]р[а-яё]{0,3}|(?:[ктя][ао]?\s*)?пара(?!\s+(?:минут|секунд|раз|дней|часов|слов|штук|лет|человек))|[ck]app?[aeo]r[a-z]{0,3})(?![а-яёa-z])[\s,.!?:-]*/i;
 
-/**
- * What was said after the wake word: the command, "" when only the wake word was said, null when the phrase
- * does not start with it (then it is not for the house and is ignored).
- */
 /** Of the browser's guesses for one phrase, the first that starts with the wake word (the invented word is often only the 2nd or 3rd guess), else the best guess. */
 export function pickHeard(guesses: ReadonlyArray<{ transcript: string }>): string {
   const texts = guesses.map((g) => g.transcript.trim()).filter(Boolean);
   return texts.find((t) => afterWakeWord(t) !== null) ?? texts[0] ?? "";
 }
 
+/**
+ * What was said after the wake word: the command, "" when only the wake word was said, null when the phrase
+ * does not start with it (then it is not for the house and is ignored).
+ */
 export function afterWakeWord(text: string): string | null {
   const m = WAKE.exec(text);
   if (m) return text.slice(m[0].length).trim();
@@ -151,7 +151,7 @@ function distance(a: string, b: string): number {
 /** A word that starts like «капара» and is at most two letters away from it once written in Latin («Camaro», «Каммаро»). «Камера»/«camera» is a real word and is left alone. */
 function soundsLikeWake(word: string): boolean {
   const w = word.toLowerCase();
-  if (/^(камер|camera)/.test(w)) return false;
+  if (/^(камер|camera|капл|купл|копл|кабел|кабин|копир|купол)/.test(w)) return false;
   const latin = [...w].map((c) => LATIN[c] ?? c).join("").replace(/c/g, "k");
   if (latin.length < 5 || latin.length > 8) return false;
   if (latin.startsWith("ka") && distance(latin, "kapara") <= 2) return true;
