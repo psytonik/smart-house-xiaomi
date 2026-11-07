@@ -164,6 +164,11 @@ export class TvAdb {
     await this.shell(["input", "keyevent", String(KEY_TV_INPUT)]);
   }
 
+  /** One key of the TV's remote by its Android key code, sent over ADB (some apps, Prisma among them, ignore arrows from the remote protocol). */
+  async press(code: number): Promise<void> {
+    await this.shell(["input", "keyevent", String(code)]);
+  }
+
   /** The apps in the TV's memory that may be closed. */
   async running(): Promise<RunningApp[]> {
     const ps = await this.shell(["ps", "-A", "-o", "USER,PID,RSS,NAME"]);

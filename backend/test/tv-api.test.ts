@@ -181,6 +181,11 @@ describe("TV API with ADB (pretend TV and adb)", () => {
     assert.equal((await post("/api/tv/key", { key: "up" })).statusCode, 503, "other keys still go over the remote protocol, which is not paired here");
   });
 
+  it("sends an arrow over ADB when asked (inside apps that ignore the remote protocol)", async () => {
+    assert.equal((await post("/api/tv/key", { key: "right", adb: true })).statusCode, 200);
+    assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell input keyevent 22");
+  });
+
   it("lists Prisma as an app and opens it over ADB", async () => {
     const apps = (await app.inject({ url: "/api/tv", headers: auth })).json().apps as Array<{ id: string; label: string }>;
     assert.deepEqual(apps.map((a) => a.id), ["youtube", "netflix", "prime", "disney", "twitch", "prisma", "ottplay"]);

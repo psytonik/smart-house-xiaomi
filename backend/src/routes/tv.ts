@@ -3,7 +3,7 @@ import type { AppContext } from "../context.js";
 import { HttpError } from "../go2rtc.js";
 import { TvError, TvRemote } from "../tv.js";
 import { findAdb, TvAdb } from "../tvAdb.js";
-import { APPS, APP_IDS, KEY_NAMES, type TvApp, type TvKey } from "../tv/messages.js";
+import { APPS, APP_IDS, KEYS, KEY_NAMES, type TvApp, type TvKey } from "../tv/messages.js";
 import { isAwake } from "../awake.js";
 import { PHONE_SERIAL, sendIrWake } from "../ir.js";
 import { broadcastsFor, parseMacs, wake } from "../wol.js";
@@ -194,10 +194,12 @@ export function tvRoutes(app: FastifyInstance, ctx: AppContext, env: NodeJS.Proc
     })();
   };
 
-  app.post<{ Body: { key: TvKey } }>(
+  app.post<{ Body: { key: TvKey; adb?: boolean } }>(
     "/api/tv/key",
-    { schema: { body: { type: "object", additionalProperties: false, required: ["key"], properties: { key: { type: "string", enum: KEY_NAMES } } } } },
+    { schema: { body: { type: "object", additionalProperties: false, required: ["key"], properties: { key: { type: "string", enum: KEY_NAMES }, adb: { type: "boolean" } } } } },
     (req) => {
+      // arrows, OK and Back over ADB when asked (the voice assistant inside apps): the remote protocol does not move the focus in Prisma
+      if (req.body.adb && adb && ["up", "down", "left", "right", "ok", "back"].includes(req.body.key)) return guarded(() => adb!.press(KEYS[req.body.key]));
       // the INPUT key of this app opens the TV's own Source Choice, which only ADB can reach
       if (req.body.key === "input" && adb) return guarded(() => adb!.openSourceMenu());
       // Power while the TV is not on the network: it is asleep (or off), so wake it instead of failing.

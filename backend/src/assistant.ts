@@ -333,7 +333,7 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
       let last = { status: 200, body: {} as unknown };
       for (let i = 0; i < times; i++) {
         if (i > 0) await sleep(150);
-        last = await call("POST", "/api/tv/key", { key: input.key });
+        last = await call("POST", "/api/tv/key", { key: input.key, ...(input.adb === true && { adb: true }) });
         if (last.status >= 400) break;
       }
       return last;
@@ -341,7 +341,7 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
     case "tv_app":
       return call("POST", "/api/tv/app", { app: input.app });
     case "tv_close_apps":
-      return call("POST", "/api/tv/running/close", { all: true });
+      return call("POST", "/api/tv/running/close", Array.isArray(input.packages) ? { packages: input.packages } : { all: true });
     case "tv_sources":
       return call("GET", "/api/tv/sources");
     case "tv_source":
@@ -366,6 +366,11 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
   for (const step of steps) {
     // A question back to the person: nothing is done, and the next phrase is the answer.
     if (step.tool === "ask") return { reply: step.say, actions };
+    // A pause between steps (an app needs time to open before it gets keys); never more than 10 seconds.
+    if (step.tool === "wait") {
+      await new Promise((r) => setTimeout(r, Math.min(10_000, Number(step.input.ms) || 0)));
+      continue;
+    }
     let tool = step.tool;
     let input = step.input;
     let say = step.say;
@@ -380,12 +385,21 @@ async function runSteps(steps: Step[], call: ApiCall): Promise<AssistantReply> {
         input = { action: "start" };
       }
     }
+    // An app that must be given time to start before the next steps send it keys: more if it was not running.
+    const settle = tool === "tv_app" ? (input.settle as { package: string; warm: number; cold: number } | undefined) : undefined;
+    let wasRunning = true;
+    if (settle) {
+      input = { app: input.app };
+      const list = await call("GET", "/api/tv/running").catch(() => undefined);
+      wasRunning = ((list?.body as { apps?: Array<{ package: string }> } | undefined)?.apps ?? []).some((a) => a.package === settle.package);
+    }
     let out: { status: number; body: unknown };
     try {
       out = await runTool(tool, input, call);
     } catch (e) {
       out = { status: 500, body: { error: e instanceof Error ? e.message : String(e) } };
     }
+    if (settle && out.status < 400) await new Promise((r) => setTimeout(r, wasRunning ? settle.warm : settle.cold));
     const ok = out.status < 400;
     actions.push({ tool, input, ok });
     // The weather needs to know where the house is: ask once, and the next phrase is the answer.

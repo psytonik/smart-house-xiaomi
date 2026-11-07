@@ -183,9 +183,12 @@ function planOne(part: string): Step[] | null {
     for (const [re, rights, name] of bar) {
       if (!has(t, re) || !has(t, /(нажми|открой|зайди|перейди|выбери|покажи|включи|найди)/)) continue;
       return [
-        { tool: "tv_key", input: { key: "up" }, say: "" },
-        ...(rights > 0 ? [{ tool: "tv_key", input: { key: "right", times: rights }, say: "" }] : []),
-        { tool: "tv_key", input: { key: "ok" }, say: `Открываю ${name} в Призме` },
+        // the keys go to whatever is on the screen: Prisma is opened first and given time to start
+        // a cold start of Prisma takes about 15 seconds before it takes keys, an app that is already open about 2
+        { tool: "tv_app", input: { app: "prisma", settle: { package: "top.rootu.prisma", warm: 2000, cold: 15000 } }, say: "" },
+        { tool: "tv_key", input: { key: "up", adb: true }, say: "" },
+        ...(rights > 0 ? [{ tool: "tv_key", input: { key: "right", times: rights, adb: true }, say: "" }] : []),
+        { tool: "tv_key", input: { key: "ok", adb: true }, say: `Открываю ${name} в Призме` },
       ] as Step[];
     }
   }
@@ -198,7 +201,7 @@ function planOne(part: string): Step[] | null {
       [/(?<![а-яё])(вправо|направо)/, "right", "Вправо"],
     ];
     const n = Math.min(10, Number(/(\d+)/.exec(t)?.[1] ?? { один: 1, два: 2, три: 3, четыре: 4, пять: 5 }[/(?<![а-яё])(один|два|три|четыре|пять)(?![а-яё])/.exec(t)?.[1] ?? ""] ?? 1) || 1);
-    for (const [re, key, say] of dirs) if (has(t, re)) return [{ tool: "tv_key", input: { key, times: n }, say }];
+    for (const [re, key, say] of dirs) if (has(t, re)) return [{ tool: "tv_key", input: { key, times: n, adb: true }, say }];
   }
 
   // --- camera ---
