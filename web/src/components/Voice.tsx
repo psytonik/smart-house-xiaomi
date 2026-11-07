@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { AuthError } from "../api";
-import { afterWakeWord, askAssistant, assistantConfigured, homeFromGps, homePlace, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, suggestions, teachPhrase, voiceChoice, wakeMode, type PiperVoice, type Recognition, type Suggestion, type Turn } from "../assistant";
+import { afterWakeWord, pickHeard, askAssistant, assistantConfigured, homeFromGps, homePlace, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, suggestions, teachPhrase, voiceChoice, wakeMode, type PiperVoice, type Recognition, type Suggestion, type Turn } from "../assistant";
 
 type Phase = "idle" | "listening" | "thinking";
 
@@ -141,12 +141,13 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
       r.lang = "ru-RU";
       r.interimResults = false;
       r.continuous = true;
+      r.maxAlternatives = 5;
       let seen = 0;
       r.onresult = (e) => {
         const parts = Array.from(e.results).slice(seen);
         seen += parts.length;
         for (const part of parts) {
-          const text = (part[0]?.transcript ?? "").trim();
+          const text = pickHeard(Array.from(part));
           const command = afterWakeWord(text);
           if (command === null) {
             setHeard(`Слышу: «${text}» (без «Капара»)`);

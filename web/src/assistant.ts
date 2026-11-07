@@ -94,6 +94,7 @@ interface Recognition {
   lang: string;
   interimResults: boolean;
   continuous: boolean;
+  maxAlternatives?: number;
   onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
   onerror: ((e: { error: string }) => void) | null;
   onend: (() => void) | null;
@@ -119,6 +120,12 @@ const WAKE = /^[\s,.!?-]*(?:ка[пб]{1,2}[аоеи]р[а-яё]{0,3}|(?:[ктя
  * What was said after the wake word: the command, "" when only the wake word was said, null when the phrase
  * does not start with it (then it is not for the house and is ignored).
  */
+/** Of the browser's guesses for one phrase, the first that starts with the wake word (the invented word is often only the 2nd or 3rd guess), else the best guess. */
+export function pickHeard(guesses: ReadonlyArray<{ transcript: string }>): string {
+  const texts = guesses.map((g) => g.transcript.trim()).filter(Boolean);
+  return texts.find((t) => afterWakeWord(t) !== null) ?? texts[0] ?? "";
+}
+
 export function afterWakeWord(text: string): string | null {
   const m = WAKE.exec(text);
   if (m) return text.slice(m[0].length).trim();

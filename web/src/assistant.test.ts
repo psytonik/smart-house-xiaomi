@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { afterWakeWord, piperVoices, russianVoices, speak, stopSpeaking } from "./assistant";
+import { afterWakeWord, pickHeard, piperVoices, russianVoices, speak, stopSpeaking } from "./assistant";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -59,5 +59,13 @@ describe("wake word", () => {
     expect(afterWakeWord("Камера включи свет")).toBeNull();
     expect(afterWakeWord("корпорация включи свет")).toBeNull();
     expect(afterWakeWord("карта найди пылесос")).toBeNull();
+  });
+});
+
+describe("pickHeard", () => {
+  it("takes the guess that has the wake word, even when it is not the best one", () => {
+    expect(pickHeard([{ transcript: "включи свет" }, { transcript: "Капара включи свет" }])).toBe("Капара включи свет");
+    expect(pickHeard([{ transcript: "включи свет" }, { transcript: "включить свет" }])).toBe("включи свет");
+    expect(pickHeard([])).toBe("");
   });
 });
