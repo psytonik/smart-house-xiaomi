@@ -489,6 +489,7 @@ describe("tv keys with the TV named", () => {
     assert.deepEqual(find[1]!.input, { query: "обитель зла" });
     assert.match(find.at(-1)!.say, /Нашла «обитель зла»/);
     assert.equal(planQuick("включи фильм брат 2")!.at(-1)!.say, "Включаю «брат 2»");
+    assert.deepEqual(planQuick("включи фильм брат 2")!.at(-1)!.input, { keys: [{ key: "down" }, { key: "ok" }] }, "after «Смотреть»: the first source, then OK");
     assert.deepEqual(planQuick("найди фильм matrix")![1]!.input, { query: "matrix" }, "Latin letters and digits are fine now");
     assert.equal(planQuick("найди фильм a; reboot")![0]!.tool === "tv_app" && (planQuick("найди фильм a; reboot")![1]!.input as { query: string }).query, "a reboot", "shell characters are dropped");
     assert.deepEqual(planQuick("включи play")?.map((x) => x.input), [{ app: "ottplay" }]);

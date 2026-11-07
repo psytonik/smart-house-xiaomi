@@ -187,7 +187,9 @@ function planOne(part: string): Step[] | null {
       { tool: "wait", input: { ms: 3000 }, say: "" },
       { tool: "tv_keys", input: { keys: [{ key: "down" }] }, say: open ? "" : `Нашла «${title}» в Призме` },
       ...(open ? [{ tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: play ? "" : `Открываю «${title}»` }] : []),
-      ...(play ? [{ tool: "wait", input: { ms: 3000 }, say: "" }, { tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: `Включаю «${title}»` }] : []),
+      ...(play ? [{ tool: "wait", input: { ms: 3000 }, say: "" }, { tool: "tv_keys", input: { keys: [{ key: "ok" }] }, say: "" },
+        // «Смотреть» shows the list of sources (HDVB… «Не требуется»): one «down» onto the first, OK starts the player
+        { tool: "wait", input: { ms: 3500 }, say: "" }, { tool: "tv_keys", input: { keys: [{ key: "down" }, { key: "ok" }] }, say: `Включаю «${title}»` }] : []),
     ];
   }
 
