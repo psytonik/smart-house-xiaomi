@@ -219,6 +219,8 @@ function planOne(part: string): Step[] | null {
     const n = { один: 1, два: 2, три: 3, четыре: 4 }[hdmi[1]!] ?? Number(hdmi[1]);
     return [{ tool: "tv_source", input: { source: `hdmi${n}` }, say: `Переключаю на HDMI ${n}` }];
   }
+  // the game console is on HDMI 1 in this house ("плойка подключена к hdmi 1")
+  if (has(t, /(плойк|плейстейшн|плэйстейшн|playstation|(?<![а-яё])пс ?[345](?![а-яё\d])|приставк)/) && has(t, /(включи|запусти|переключи|давай|хочу)/)) return [{ tool: "tv_source", input: { source: "hdmi1" }, say: "Переключаю на приставку" }];
   if (has(t, /(?<![a-zа-яё])(av|эй ?ви)(?![a-zа-яё])/) && has(t, /(включи|переключи|источник|вход)/)) return [{ tool: "tv_source", input: { source: "av" }, say: "Переключаю на AV" }];
   // "закрой все приложения на телевизоре": needs the TV's ADB, otherwise the API says so
   if (has(t, /(закр|заверш|останов|выключ)/) && has(t, /(?<![а-яё])приложен/) && has(t, /(все|всё|каждое)/)) return [{ tool: "tv_close_apps", input: {}, say: "Закрыл все приложения на телевизоре" }];
