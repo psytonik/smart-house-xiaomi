@@ -72,6 +72,7 @@ export const APPS: Record<string, { label: string; link?: string; component?: st
   disney: { label: "Disney+", link: "https://www.disneyplus.com" },
   twitch: { label: "Twitch", link: "https://www.twitch.tv" },
   prisma: { label: "Prisma", component: "top.rootu.prisma/.ConnectActivity" },
+  ottplay: { label: "OTT Player", component: "com.ott_play/com.ottplay.ott_play.MainActivity" },
 };
 export type TvApp = string;
 export const APP_IDS = Object.keys(APPS);

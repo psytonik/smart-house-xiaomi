@@ -200,6 +200,7 @@ function planOne(part: string): Step[] | null {
       [/(дисней|disney)/, "disney", "Disney+"],
       [/(твич|twitch)/, "twitch", "Twitch"],
       [/(призм|prisma)/, "prisma", "Prisma"],
+      [/(?<![a-zа-яё])(ott|отт ?плей|отт ?плеер|от ?ти ?ти)/, "ottplay", "OTT Player"],
     ];
     for (const [re, id, name] of apps) if (has(t, re)) return [{ tool: "tv_app", input: { app: id }, say: `Открываю ${name}` }];
   }

@@ -183,10 +183,12 @@ describe("TV API with ADB (pretend TV and adb)", () => {
 
   it("lists Prisma as an app and opens it over ADB", async () => {
     const apps = (await app.inject({ url: "/api/tv", headers: auth })).json().apps as Array<{ id: string; label: string }>;
-    assert.deepEqual(apps.map((a) => a.id), ["youtube", "netflix", "prime", "disney", "twitch", "prisma"]);
-    assert.equal(apps.at(-1)!.label, "Prisma");
+    assert.deepEqual(apps.map((a) => a.id), ["youtube", "netflix", "prime", "disney", "twitch", "prisma", "ottplay"]);
+    assert.equal(apps.find((a) => a.id === "prisma")!.label, "Prisma");
     assert.equal((await post("/api/tv/app", { app: "prisma" })).statusCode, 200);
     assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell am start -n top.rootu.prisma/.ConnectActivity");
+    assert.equal((await post("/api/tv/app", { app: "ottplay" })).statusCode, 200);
+    assert.equal(calls().at(-1), "-s 10.0.0.9:5555 shell am start -n com.ott_play/com.ottplay.ott_play.MainActivity");
   });
 
   it("lists the running apps and closes them one by one or all together, never the launcher", async () => {
