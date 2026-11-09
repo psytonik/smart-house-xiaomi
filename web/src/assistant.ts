@@ -114,7 +114,7 @@ export type { Recognition };
  * The word that starts every command in "always listening" mode. Speech recognition spells an invented word
  * differently each time («капаров», «каппара», «кабара»…), so the first word is matched loosely: «ка», «п/б», a vowel, «р», a short ending.
  */
-const WAKE = /^[\s,.!?-]*(?:[кгх]а[пб]{1,2}\s?[аоеи]р[а-яё]{0,3}|(?:[ктя][ао]?\s*)?пара(?!\s+(?:минут|секунд|раз|дней|часов|слов|штук|лет|человек))|[ck]app?[aeo]r[a-z]{0,3})(?![а-яёa-z])[\s,.!?:-]*/i;
+const WAKE = /^[\s,.!?-]*(?:[кгх]а[пб]{1,2}\s?[аоеи]р[а-яё]{0,3}|(?:[ктя][ао]?\s*)?пара(?!\s+(?:минут|секунд|раз|дней|часов|слов|штук|лет|человек))|(?:[ктя]о?\s*)?пора(?!\s+(?:спать|домой|идти|ехать|вставать|уже|выходить|обедать|ужинать|завтракать|начинать|заканчивать|прощаться|бы|ли|в\s+путь|на\s))|[ck]app?[aeo]r[a-z]{0,3})(?![а-яёa-z])[\s,.!?:-]*/i;
 
 /** Of the browser's guesses for one phrase, the first that starts with the wake word (the invented word is often only the 2nd or 3rd guess), else the best guess. */
 export function pickHeard(guesses: ReadonlyArray<{ transcript: string }>): string {
@@ -160,12 +160,15 @@ function distance(a: string, b: string): number {
 /** A word that starts like «капара» and is at most two letters away from it once written in Latin («Camaro», «Каммаро»). «Камера»/«camera» is a real word and is left alone. */
 function soundsLikeWake(word: string): boolean {
   const w = word.toLowerCase();
-  if (/^(камер|camera|капл|купл|копл|кабел|кабин|копир|купол)/.test(w)) return false;
+  // «как…» («какая», «какой») is a question word, never the wake word; the others are real words that start like it.
+  if (/^(как|камер|camera|капл|купл|копл|кабел|кабин|копир|купол)/.test(w)) return false;
   const latin = [...w].map((c) => LATIN[c] ?? c).join("").replace(/c/g, "k");
   if (latin.length < 5 || latin.length > 8) return false;
   if (latin.startsWith("ka") && distance(latin, "kapara") <= 2) return true;
-  // Same consonants, other vowels (and л heard as р): «капара», «корпора», «копала» (k-p-r, k-r-p-r).
-  return /^k[aeiou]/.test(latin) && /^kr?[pb]r$/.test(latin.replace(/[aeiou]/g, "").replace(/l/g, "r").replace(/(.)\1+/g, "$1"));
+  // Same consonants, other vowels (and л heard as р): «капара», «корпора», «копала», «топора», «тобара» (k/t-p-r, k-r-p-r).
+  // «Капара» has three syllables: «кобра», «топор» do not count.
+  const syllables = (latin.match(/[aeiou]+/g) ?? []).length;
+  return syllables >= 3 && /^[ktgh][aeiou]/.test(latin) && /^[ktgh]r?[pb]r$/.test(latin.replace(/[aeiou]/g, "").replace(/l/g, "r").replace(/(.)\1+/g, "$1"));
 }
 
 const WAKE_KEY = "cam.alwaysListen";
@@ -258,8 +261,8 @@ let speechId = 0;
 /** The answer cut into sentences, tiny pieces glued to the next one: the slow cloned voice then starts after the first sentence, not after the whole answer. */
 export function sentences(text: string): string[] {
   const whole = (text.trim().match(/[^.!?…]+[.!?…]*\s*/g) ?? [text]).map((p) => p.trim()).filter(Boolean);
-  // A long sentence is cut after commas too: the slow cloned voice must not make one long piece.
-  const parts = whole.flatMap((p) => (p.length > 60 ? (p.match(/[^,;:]+[,;:]?\s*/g) ?? [p]).map((x) => x.trim()).filter(Boolean) : [p]));
+  // A sentence over 45 characters is cut after commas too: the slow cloned voice must not make one long piece (the wait for the first sound grows with its length).
+  const parts = whole.flatMap((p) => (p.length > 45 ? (p.match(/[^,;:]+[,;:]?\s*/g) ?? [p]).map((x) => x.trim()).filter(Boolean) : [p]));
   const out: string[] = [];
   let carry = "";
   for (const p of parts) {

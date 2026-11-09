@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { afterWakeWord, pickHeard, piperVoices, russianVoices, speak, stopSpeaking } from "./assistant";
+import { afterWakeWord, pickHeard, piperVoices, russianVoices, sentences, speak, stopSpeaking } from "./assistant";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -56,6 +56,18 @@ describe("wake word", () => {
     expect(afterWakeWord("Камаро, включи свет")).toBe("включи свет");
     expect(afterWakeWord("Kappara, включи свет")).toBe("включи свет");
   });
+  it("hears the spellings the browser really wrote for it (from the journal): «топора», «пора», «каппара»…", () => {
+    for (const w of ["топора", "Топора,", "пора", "Пора,", "каппара", "капаров", "копара", "тапара", "топара", "тобара", "типора", "хабара", "ко пора", "то пора"]) {
+      expect(afterWakeWord(`${w} Какая погода на улице`), w).toBe("Какая погода на улице");
+    }
+    expect(afterWakeWord("топора убери гостиную")).toBe("убери гостиную");
+    expect(afterWakeWord("пора Найди мне фильм Матрица")).toBe("Найди мне фильм Матрица");
+    expect(afterWakeWord("Camaro Какой сегодня день")).toBe("Какой сегодня день");
+  });
+  it("does not take real words for it", () => {
+    for (const w of ["топор", "тарелка", "товар", "тапок", "капуста", "порт", "порода", "покупка", "корова", "кобра", "камера"]) expect(afterWakeWord(`${w} включи свет`), w).toBeNull();
+    for (const phrase of ["пора спать", "пора домой", "пора идти", "пора вставать", "пора уже", "топор лежит там"]) expect(afterWakeWord(phrase), phrase).toBeNull();
+  });
   it("returns an empty command when only the wake word was said", () => {
     expect(afterWakeWord("Капара")).toBe("");
     expect(afterWakeWord("Капара!")).toBe("");
@@ -75,5 +87,17 @@ describe("pickHeard", () => {
     expect(pickHeard([{ transcript: "включи свет" }, { transcript: "Капара включи свет" }])).toBe("Капара включи свет");
     expect(pickHeard([{ transcript: "включи свет" }, { transcript: "включить свет" }])).toBe("включи свет");
     expect(pickHeard([])).toBe("");
+  });
+});
+
+describe("sentences for the slow cloned voice", () => {
+  it("keeps a short answer in one piece", () => {
+    expect(sentences("Свет включён.")).toEqual(["Свет включён."]);
+  });
+  it("cuts a long sentence after commas so the first sound does not wait for all of it", () => {
+    const text = "Включила свет в гостиной, приглушила до тридцати процентов.";
+    const parts = sentences(text);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.join(" ")).toBe(text);
   });
 });
