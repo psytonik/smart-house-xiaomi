@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { DownMemo } from "./breaker.js";
 import { HttpError } from "./go2rtc.js";
 import { CozyLight, LightError } from "./light.js";
 
@@ -53,7 +54,12 @@ export class BleLamp {
     private token: string,
   ) {}
 
+  /** A strip the helper could not find (or a helper that is not running) is not asked again for a few seconds: each try takes seconds. */
+  private readonly down = new DownMemo(10_000);
+  private downReason = "";
+
   private async call(path: string, init?: RequestInit): Promise<unknown> {
+    if (this.down.isDown) throw new LightError(this.downReason);
     let res: Response;
     try {
       res = await fetch(`${this.baseUrl}${path}`, {
@@ -62,12 +68,20 @@ export class BleLamp {
         signal: AbortSignal.timeout(15_000), // a cold Bluetooth connect can take a few seconds
       });
     } catch {
-      throw new LightError("Bluetooth helper is not running (./camera.sh starts it from Terminal.app)");
+      this.downReason = "Bluetooth helper is not running (./camera.sh starts it from Terminal.app)";
+      this.down.fail();
+      throw new LightError(this.downReason);
     }
     if (!res.ok) {
       const detail = await res.json().then((j: { error?: string }) => j.error, () => undefined);
-      throw new LightError(detail ?? `Bluetooth helper answered ${res.status}`);
+      const reason = detail ?? `Bluetooth helper answered ${res.status}`;
+      if (res.status >= 500) {
+        this.downReason = reason;
+        this.down.fail();
+      }
+      throw new LightError(reason);
     }
+    this.down.ok();
     return res.json();
   }
 

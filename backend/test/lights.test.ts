@@ -28,6 +28,7 @@ describe("hsToHex", () => {
 describe("lights API with a Bluetooth helper (mock)", () => {
   let helper: Server;
   let up = true;
+  let lightHits = 0;
   const posts: unknown[] = [];
   let dataDir: string;
   let app: Awaited<ReturnType<typeof buildApp>>;
@@ -43,6 +44,7 @@ describe("lights API with a Bluetooth helper (mock)", () => {
         res.setHeader("content-type", "application/json");
         if (req.headers.authorization !== `Bearer ${HELPER_TOKEN}`) return void res.writeHead(401).end('{"error":"unauthorized"}');
         if (req.url === "/state") return void res.end('{"connected":false}');
+        lightHits++;
         if (!up) return void res.writeHead(502).end('{"error":"strip not found"}');
         posts.push(JSON.parse(body));
         res.end("{}");
@@ -103,11 +105,16 @@ describe("lights API with a Bluetooth helper (mock)", () => {
     assert.equal((await app.inject({ method: "POST", url: "/api/lights/wifi", headers: auth, payload: { on: true } })).statusCode, 404);
   });
 
-  it("passes on a helper failure as 502", async () => {
+  it("passes on a helper failure as 502, and does not ask a strip that was just not found again", async () => {
     up = false;
-    const res = await app.inject({ method: "POST", url: "/api/lights/ble", headers: auth, payload: { on: true } });
+    const before = lightHits;
+    const first = await app.inject({ method: "POST", url: "/api/lights/ble", headers: auth, payload: { on: true } });
+    const second = await app.inject({ method: "POST", url: "/api/lights/ble", headers: auth, payload: { on: false } });
     up = true;
-    assert.equal(res.statusCode, 502);
-    assert.match(res.json().message ?? res.json().error, /strip not found/);
+    assert.equal(first.statusCode, 502);
+    assert.match(first.json().message ?? first.json().error, /strip not found/);
+    assert.equal(second.statusCode, 502);
+    assert.match(second.json().message ?? second.json().error, /strip not found/); // the same reason, at once
+    assert.equal(lightHits - before, 1, "the helper was asked once, the second call failed without it");
   });
 });

@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash } from "node:crypto";
 import { createSocket } from "node:dgram";
+import { DownMemo } from "./breaker.js";
 
 export class MiioError extends Error {}
 
@@ -17,6 +18,8 @@ export class MiioDevice {
   private readonly iv: Buffer;
   private queue: Promise<unknown> = Promise.resolve();
   private nextId = 1;
+  /** A robot that did not answer is not asked again for a while: every call would wait for its own timeout (3 s) otherwise. */
+  private readonly down = new DownMemo(15_000);
 
   constructor(
     readonly ip: string,
@@ -92,8 +95,23 @@ export class MiioDevice {
   }
 
   call(method: string, params: unknown): Promise<unknown> {
-    const run = this.queue.then(() => this.exchange(method, params));
+    // The check is made when the call's turn comes, not when it is queued: a call waiting behind one that times out must not wait again.
+    const run = this.queue.then(() => this.attempt(method, params));
     this.queue = run.catch(() => {});
     return run;
+  }
+
+  private async attempt(method: string, params: unknown): Promise<unknown> {
+    if (this.down.isDown) throw new MiioError("vacuum did not answer");
+    try {
+      const value = await this.exchange(method, params);
+      this.down.ok();
+      return value;
+    } catch (e) {
+      // "did not answer" and "unreachable" mean silence; a refusal or an unreadable reply means the robot is there.
+      if (e instanceof MiioError && /did not answer|unreachable/.test(e.message)) this.down.fail();
+      else this.down.ok();
+      throw e;
+    }
   }
 }
