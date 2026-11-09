@@ -420,7 +420,7 @@ async function runSteps(steps: Step[], call: ApiCall, pause: (ms: number) => Pro
     if (ok && tool === "weather") say = String((out.body as { text?: string }).text ?? "");
     if (!ok) {
       const why = (out.body as { error?: string } | null)?.error;
-      return { reply: `Не получилось: ${why ?? "устройство не ответило"}.`, actions };
+      return { reply: spokenFailure(tool, why), actions };
     }
     if (say) said.push(say);
   }
@@ -428,6 +428,21 @@ async function runSteps(steps: Step[], call: ApiCall, pause: (ms: number) => Pro
 }
 
 /** Tools that change something; the others only look, and are not worth remembering. */
+/** Device names for the spoken failure, by the start of the tool name. Each phrase made from them is in COMMON_PHRASES (tts.ts), so it plays at once from the cache. */
+const DEVICE_WORD: Array<[prefix: string, word: string]> = [
+  ["vacuum", "пылесос"],
+  ["lights", "свет"],
+  ["tv", "телевизор"],
+  ["camera", "камера"],
+];
+
+/** What the voice says when a tool failed. "vacuum did not answer" is English, which the Russian voice reads badly and slowly: a device that is silent gets a short fixed phrase from the cache. */
+export function spokenFailure(tool: string, why: string | undefined): string {
+  const device = DEVICE_WORD.find(([prefix]) => tool.startsWith(prefix))?.[1];
+  if (!why || /did not answer|unreachable|timed? ?out|refused|ECONN/i.test(why)) return device ? `Не получилось: ${device} не отвечает.` : "Не получилось: устройство не отвечает.";
+  return `Не получилось: ${why}.`; // a reason that says something (the TV is off, the robot is not on its dock) is kept as it is
+}
+
 const DOES = new Set(["camera_move", "camera_back", "camera_turn", "camera_go_place", "camera_save_place", "lights_set", "vacuum_action", "vacuum_map_refresh", "vacuum_mode", "vacuum_suction", "vacuum_water", "vacuum_clean_rooms", "tv_key", "tv_keys", "tv_app", "tv_source", "tv_close_apps"]);
 
 /** Words that make a phrase about the camera, so a saved place named in it ("дверь") is a place to look at. */

@@ -48,9 +48,27 @@ export function numberToWords(n: number, g: Gender = "m"): string {
   return words.join(" ");
 }
 
+/** The last word of a cardinal as an ordinal in the genitive ("девять" → "девятого"): a day of the month, "девятого ноября". */
+const ORDINAL_GEN: Record<string, string> = {
+  один: "первого", два: "второго", три: "третьего", четыре: "четвёртого", пять: "пятого", шесть: "шестого", семь: "седьмого", восемь: "восьмого", девять: "девятого",
+  десять: "десятого", одиннадцать: "одиннадцатого", двенадцать: "двенадцатого", тринадцать: "тринадцатого", четырнадцать: "четырнадцатого", пятнадцать: "пятнадцатого",
+  шестнадцать: "шестнадцатого", семнадцать: "семнадцатого", восемнадцать: "восемнадцатого", девятнадцать: "девятнадцатого", двадцать: "двадцатого", тридцать: "тридцатого",
+};
+const MONTHS_GEN = "января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря";
+
+/** «9 ноября» → «девятого ноября», «21 марта» → «двадцать первого марта». */
+function spellDates(text: string): string {
+  return text.replace(new RegExp(`(?<![\\p{L}\\d])(\\d{1,2})(\\s+)(${MONTHS_GEN})(?![\\p{L}])`, "giu"), (all, day: string, space: string, month: string) => {
+    if (+day < 1 || +day > 31) return all;
+    const words = numberToWords(+day).split(" ");
+    const last = ORDINAL_GEN[words[words.length - 1]!];
+    return last ? `${[...words.slice(0, -1), last].join(" ")}${space}${month}` : all;
+  });
+}
+
 /** Replaces every number in the text with words ("-3" → "минус три", "1,5" → "один и пять десятых", "22:30" → "двадцать два тридцать"). */
 export function spellNumbers(text: string): string {
-  return text
+  return spellDates(text)
     .replace(/(\d{1,2}):(\d{2})(?!\d)/g, (_, h: string, m: string) => `${numberToWords(+h)} ${m === "00" ? "ровно" : m.startsWith("0") ? `ноль ${numberToWords(+m, "f")}` : numberToWords(+m, "f")}`)
     .replace(/(?<![\p{L}\d])(-|−)?(\d+)(?:[.,](\d{1,2}))?(%?)(?=$|[^\d])(\s*)(\p{L}*)/gu, (all, minus: string | undefined, whole: string, frac: string | undefined, pct: string, space: string, next: string) => {
       const g: Gender = FEMININE.test(next) ? "f" : "m";

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import type Anthropic from "@anthropic-ai/sdk";
 import { buildApp } from "../src/app.js";
-import { runAssistant, type ApiCall, type Brain } from "../src/assistant.js";
+import { runAssistant, spokenFailure, type ApiCall, type Brain } from "../src/assistant.js";
 import { testConfig } from "./helpers.js";
 
 const message = (stop_reason: string, content: unknown[]) => ({ stop_reason, content }) as unknown as Anthropic.Message;
@@ -321,7 +321,7 @@ describe("quick commands (rules, no model)", () => {
     for (const q of ["Который час", "Который сейчас час?", "сколько сейчас времени", "сколько времени", "Сколько сейчас часов"]) {
       const steps = planQuick(plain(q));
       assert.equal(steps?.[0]?.tool, "ask", q);
-      assert.match(steps![0]!.say, /^Сейчас \d+ (час|часа|часов) \d+ (минута|минуты|минут)$/, q);
+      assert.match(steps![0]!.say, /^Сейчас \d+ (час|часа|часов) (ночи|утра|дня|вечера)( \d+ (минута|минуты|минут)| ровно)$/, q);
     }
   });
 
@@ -343,7 +343,7 @@ describe("quick commands (rules, no model)", () => {
 
   it("tells the time and the date without a model", () => {
     const say = (t: string) => planQuick(plain(t))?.[0]?.say;
-    assert.match(say("Который час") ?? "", /^Сейчас \d+ (час|часа|часов) \d+ (минута|минуты|минут)$/);
+    assert.match(say("Который час") ?? "", /^Сейчас \d+ (час|часа|часов) (ночи|утра|дня|вечера)( \d+ (минута|минуты|минут)| ровно)$/);
     assert.match(say("сколько времени") ?? "", /^Сейчас /);
     assert.match(say("какое сегодня число") ?? "", /^Сегодня /);
   });
@@ -651,5 +651,16 @@ describe("assistant learns from the household", () => {
     await runAssistant({ brain: brainThatActs(), model: "m", call: okCall, text: "включи ночник", memory });
     assert.deepEqual(memory.recent().map((e) => [e.text, e.via, e.ok]), [["включи ночник", "model", true], ["выключи свет", "rules", true]]);
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("what the voice says when a device fails", () => {
+  it("says a silent device in Russian, a short phrase that is cached", () => {
+    assert.equal(spokenFailure("vacuum_action", "vacuum did not answer"), "Не получилось: пылесос не отвечает.");
+    assert.equal(spokenFailure("lights_set", "lamp unreachable: EHOSTUNREACH"), "Не получилось: свет не отвечает.");
+    assert.equal(spokenFailure("weather", undefined), "Не получилось: устройство не отвечает.");
+  });
+  it("keeps a reason that says something", () => {
+    assert.equal(spokenFailure("vacuum_action", "the robot has to be on its dock to empty its bin"), "Не получилось: the robot has to be on its dock to empty its bin.");
   });
 });
