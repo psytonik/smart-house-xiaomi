@@ -26,3 +26,6 @@ ir-phone/build/
 ir-phone/app/build/
 ir-phone/local.properties
 go2rtc-motor.prev*
+venv-clone/
+venv-mlx/
+__pycache__/

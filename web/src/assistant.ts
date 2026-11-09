@@ -226,6 +226,7 @@ export interface PiperVoice {
 
 /** "ru_RU-denis-medium" is shown as "Denis (neural, Piper)". */
 export const piperLabel = (id: string): string => {
+  if (id === "olya") return "Оля (neural)";
   const name = id.split("-")[1] ?? id;
   return `${name.charAt(0).toUpperCase()}${name.slice(1)} (neural, Piper)`;
 };
@@ -254,29 +255,65 @@ function finished(): void {
 /** Bumped by every stopSpeaking(): an answer that was still being fetched must not start playing after the microphone opened. */
 let speechId = 0;
 
-/** Plays Piper's answer; false when the server could not make it, so the caller can use the browser's voice instead. */
-async function speakWithPiper(text: string, voice: string): Promise<boolean> {
-  const mine = speechId;
+/** The answer cut into sentences, tiny pieces glued to the next one: the slow cloned voice then starts after the first sentence, not after the whole answer. */
+export function sentences(text: string): string[] {
+  const whole = (text.trim().match(/[^.!?…]+[.!?…]*\s*/g) ?? [text]).map((p) => p.trim()).filter(Boolean);
+  // A long sentence is cut after commas too: the slow cloned voice must not make one long piece.
+  const parts = whole.flatMap((p) => (p.length > 60 ? (p.match(/[^,;:]+[,;:]?\s*/g) ?? [p]).map((x) => x.trim()).filter(Boolean) : [p]));
+  const out: string[] = [];
+  let carry = "";
+  for (const p of parts) {
+    carry = carry ? `${carry} ${p}` : p;
+    if (carry.length >= 25) {
+      out.push(carry);
+      carry = "";
+    }
+  }
+  if (carry) out.length ? (out[out.length - 1] += ` ${carry}`) : out.push(carry);
+  return out.length ? out : [text];
+}
+
+async function fetchSpeech(text: string, voice: string): Promise<Blob | null> {
   try {
     const res = await api("/api/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, speed: voiceChoice.rate(), ...(voice ? { voice } : {}) }) });
-    if (!res.ok) return false;
-    const blob = await res.blob();
+    return res.ok ? await res.blob() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Plays the server's answer sentence by sentence (the next one is made while the current one plays); false when the very first could not be made, so the caller can use the browser's voice instead. */
+async function speakWithPiper(text: string, voice: string): Promise<boolean> {
+  const mine = speechId;
+  const parts = sentences(text);
+  let next = fetchSpeech(parts[0]!, voice);
+  for (let i = 0; i < parts.length; i++) {
+    const blob = await next;
     if (mine !== speechId) return true; // stopped while the voice was being made: stay silent
+    if (!blob) {
+      if (i === 0) return false;
+      finished();
+      return true;
+    }
+    if (i + 1 < parts.length) next = fetchSpeech(parts[i + 1]!, voice);
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
-    audio.onended = () => {
-      URL.revokeObjectURL(url);
-      if (mine === speechId) finished();
-    };
-    audio.onerror = () => {
-      if (mine === speechId) finished();
-    };
     playing = audio;
-    await audio.play();
-    return true;
-  } catch {
-    return false;
+    try {
+      await new Promise<void>((done, fail) => {
+        audio.onended = () => done();
+        audio.onerror = () => done();
+        audio.play().catch(fail);
+      });
+    } catch {
+      URL.revokeObjectURL(url);
+      return i > 0; // the browser refused to play: the first sentence falls back to the browser's voice
+    }
+    URL.revokeObjectURL(url);
+    if (mine !== speechId) return true;
   }
+  finished();
+  return true;
 }
 
 function speakWithBrowser(text: string): void {

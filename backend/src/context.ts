@@ -8,7 +8,7 @@ import { Go2rtc } from "./go2rtc.js";
 import { CozyLight } from "./light.js";
 import { PtzPresetStore } from "./ptzPresets.js";
 import { PushService } from "./push.js";
-import { PiperTts } from "./tts.js";
+import { CloneTts, PiperTts } from "./tts.js";
 import { SerialQueue } from "./queue.js";
 import { MotionRecorder } from "./recorder.js";
 import { UrlSigner } from "./signing.js";
@@ -35,7 +35,7 @@ export interface AppContext {
   devices: DeviceStore;
   light?: CozyLight;
   /** The neural voice, when Piper is set up. */
-  tts?: PiperTts;
+  tts?: PiperTts | CloneTts;
   snapshotsDir: string;
   /** Stops background work (recorder, stream keeper, held push summary). */
   close(): Promise<void>;
@@ -67,7 +67,8 @@ export async function createContext(cfg: Config, log: { info: (m: string) => voi
   push.attach(recorder);
   await recorder.start();
 
-  const tts = cfg.piper ? new PiperTts(cfg.piper, (m) => log.info(m)) : undefined;
+  const piper = cfg.piper ? new PiperTts(cfg.piper, (m) => log.info(m)) : undefined;
+  const tts = cfg.clone ? new CloneTts(cfg.clone, piper, (m) => log.info(m)) : piper;
 
   return {
     cfg,

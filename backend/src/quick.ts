@@ -106,7 +106,7 @@ function planOne(part: string): Step[] | null {
   if (!t) return null;
 
   // --- time and date: nothing to do, only to say (the "ask" step says its text and does nothing) ---
-  if (has(t, /(который час|сколько (сейчас )?времени|сколько время|скажи время|сколько натикало)/)) {
+  if (has(t, /(который (сейчас |теперь )?час|сколько (сейчас |уже )?(времени|часов)|сколько время|скажи (мне )?(сколько )?время|подскажи время|сколько натикало|время сейчас)/)) {
     const d = new Date();
     return [{ tool: "ask", input: {}, say: `Сейчас ${d.getHours()} ${plural(d.getHours(), "час", "часа", "часов")} ${d.getMinutes()} ${plural(d.getMinutes(), "минута", "минуты", "минут")}` }];
   }

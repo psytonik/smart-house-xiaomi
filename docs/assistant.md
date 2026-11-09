@@ -32,6 +32,7 @@
 | `ASSISTANT_MODEL` | `qwen3:8b` (ollama), `claude-opus-5-5` (anthropic) | модель |
 | `OLLAMA_URL` | `http://127.0.0.1:11434` | где работает Ollama |
 | `TTS_PIPER` | включён, если Piper установлен | `false` выключает нейроголос (останутся голоса браузера) |
+| `TTS_CLONE`, `CLONE_PYTHON`, `CLONE_REFERENCE`, `CLONE_PORT` | включён, если есть `backend/venv-mlx` (Chatterbox на MLX: фраза делается примерно за время её звучания) и `backend/data/voice/reference.wav`; порт `5056` | голос «Оля» (клон, [ADR 0023](adr/0023-cloned-assistant-voice.md)) становится главным, при сбое остаются другие голоса Piper, если они лежат в `backend/models/piper/`, иначе голос браузера; `TTS_CLONE=false` выключает. Ответы кэшируются в `backend/data/voice/cache/`. Первая новая фраза идёт секунды, повторная мгновенно |
 | `PIPER_PYTHON`, `PIPER_MODEL`, `PIPER_PORT` | `venv-piper/bin/python`, `backend/models/piper/ru_RU-denis-medium.onnx`, `5055` | где Piper, главный голос, порт его сервера (только `127.0.0.1`) |
 | `ANTHROPIC_API_KEY` | пусто | ключ, если нужен Claude. Получить: https://console.anthropic.com → Settings → API Keys (API оплачивается отдельно от подписки) |
 
@@ -107,6 +108,8 @@ ollama serve                # или: brew services start ollama (запуск �
 Забыть выученную фразу: `POST /api/assistant/forget {"text":"включи ночник"}`.
 
 ## Голос ответа
+
+Голос Denis (Piper) удалён с диска по просьбе владельца; главный голос теперь «Оля» (клон, [ADR 0023](adr/0023-cloned-assistant-voice.md)), без неё остаются голоса браузера. Ниже про Piper как он был устроен: другие голоса Piper кладутся в `backend/models/piper/`.
 
 Помощник отвечает голосом **Piper**: бесплатный нейроголос, который работает на этом Mac без интернета. Если Piper не установлен, отвечают русские голоса браузера (кроме Milena).
 

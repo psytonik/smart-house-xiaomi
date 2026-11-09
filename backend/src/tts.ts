@@ -1,6 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
-import { basename, dirname } from "node:path";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { spellNumbers } from "./ruNumbers.js";
 
 export interface PiperConfig {
   /** Python of the Piper environment (venv-piper). Without it nothing is started and `url` must already be serving. */
@@ -93,5 +95,154 @@ export class PiperTts {
     this.closed = true;
     this.child?.kill();
     this.child = undefined;
+  }
+}
+
+export interface CloneConfig {
+  /** Python of the clone environment (venv-mlx). */
+  python: string;
+  /** The server script (scripts/clone_tts_server.py). */
+  script: string;
+  /** A clean recording of the person whose voice it is (they agreed, see ADR 0023). */
+  reference: string;
+  port: number;
+  /** Finished phrases are kept here, so a repeated answer is instant. */
+  cacheDir: string;
+  /** The id and the name shown in the Voice list. */
+  voice: string;
+}
+
+/** Short replies the assistant gives all the time: made once after start (a few minutes in the background), then they play at once from the cache. */
+export const COMMON_PHRASES = [
+  "Готово.",
+  "Свет включён.",
+  "Свет выключен.",
+  "Приглушил свет.",
+  "Сделал ярче.",
+  "Сделал громче.",
+  "Сделал тише.",
+  "Пауза.",
+  "Звук переключён.",
+  "Пылесос начал уборку.",
+  "Пылесос едет на базу.",
+  "Уборка остановлена.",
+  "Поменял мощность пылесоса.",
+  "Поменял количество воды.",
+  "Опустошаю бак пылесоса.",
+  "Камера вернулась на прежнее место.",
+  "Закрыл все приложения на телевизоре.",
+  "Не поняла номер канала.",
+  "Что вы имели в виду? Скажите по-другому, и я запомню.",
+];
+
+const CLONE_START_TIMEOUT_MS = 180_000;
+const CLONE_REQUEST_TIMEOUT_MS = 120_000;
+
+/**
+ * The cloned voice ("Olya"). Slow (seconds per phrase), so every phrase is cached on disk.
+ * Same interface as PiperTts: it is the main voice, Piper's voices follow it and answer when the clone cannot.
+ */
+export class CloneTts {
+  private child?: ChildProcess;
+  private starting?: Promise<void>;
+  private closed = false;
+  private readonly url: string;
+
+  constructor(
+    private readonly cfg: CloneConfig,
+    private readonly piper: PiperTts | undefined,
+    private readonly log: (m: string) => void = () => {},
+  ) {
+    this.url = `http://127.0.0.1:${cfg.port}`;
+    mkdirSync(cfg.cacheDir, { recursive: true });
+    // Load the model now (about a minute), so the first answer does not wait for it.
+    this.ready()
+      .then(() => this.warmCache())
+      .catch((e) => this.log(`clone voice did not start: ${(e as Error).message}`));
+  }
+
+  /** One phrase at a time, so an answer someone is waiting for is never behind more than one of them. */
+  private async warmCache(): Promise<void> {
+    for (const phrase of COMMON_PHRASES) {
+      if (this.closed) return;
+      await this.clone(phrase).catch(() => {});
+    }
+    this.log("clone voice: common phrases are ready");
+  }
+
+  voices(): { default: string; voices: string[] } {
+    const rest = this.piper?.voices().voices ?? [];
+    return { default: this.cfg.voice, voices: [this.cfg.voice, ...rest] };
+  }
+
+  async synthesize(text: string, speed = 1, voice?: string): Promise<Buffer> {
+    if (voice && voice !== this.cfg.voice) {
+      if (!this.piper) throw new Error(`no such voice: ${voice}`);
+      return this.piper.synthesize(text, speed, voice);
+    }
+    try {
+      return await this.clone(text);
+    } catch (e) {
+      this.log(`clone voice failed (${(e as Error).message}), Piper answers`);
+      if (!this.piper) throw e;
+      return this.piper.synthesize(text, speed);
+    }
+  }
+
+  private async clone(text: string): Promise<Buffer> {
+    const clean = spellNumbers(text.trim().slice(0, MAX_CHARS)); // the voice skips digits
+    if (!clean) throw new Error("nothing to say");
+    const file = join(this.cfg.cacheDir, `${createHash("sha1").update(clean).digest("hex")}.wav`);
+    if (existsSync(file)) return readFileSync(file);
+    await this.ready();
+    const res = await fetch(`${this.url}/synthesize`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text: clean }),
+      signal: AbortSignal.timeout(CLONE_REQUEST_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`clone server answered ${res.status}`);
+    const wav = Buffer.from(await res.arrayBuffer());
+    writeFileSync(file, wav);
+    return wav;
+  }
+
+  private ready(): Promise<void> {
+    if (this.child && this.child.exitCode === null && !this.child.killed) return this.starting ?? Promise.resolve();
+    this.starting = this.start().catch((e) => {
+      this.starting = undefined;
+      throw e;
+    });
+    return this.starting;
+  }
+
+  private async start(): Promise<void> {
+    if (this.closed) throw new Error("the voice is shut down");
+    const child = spawn(this.cfg.python, [this.cfg.script, "--reference", this.cfg.reference, "--port", String(this.cfg.port)], { stdio: ["ignore", "ignore", "pipe"] });
+    this.child = child;
+    child.stderr?.on("data", (d: Buffer) => this.log(`clone: ${d.toString().trim().slice(-200)}`));
+    child.on("exit", (code) => {
+      this.log(`clone exited (${code})`);
+      if (this.child === child) this.child = undefined;
+    });
+    const end = Date.now() + CLONE_START_TIMEOUT_MS;
+    while (Date.now() < end) {
+      if (child.exitCode !== null) throw new Error("the clone server did not start (see the log)");
+      try {
+        if ((await fetch(`${this.url}/info`, { signal: AbortSignal.timeout(1000) })).ok) return;
+      } catch {
+        /* not up yet */
+      }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    child.kill();
+    throw new Error("the clone server took too long to start");
+  }
+
+  close(): void {
+    this.closed = true;
+    this.child?.kill();
+    this.child = undefined;
+    this.piper?.close();
   }
 }

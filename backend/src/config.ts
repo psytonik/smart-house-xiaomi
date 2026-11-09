@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import type { PiperConfig } from "./tts.js";
+import type { CloneConfig, PiperConfig } from "./tts.js";
 
 export interface MotionConfig {
   enabled: boolean;
@@ -92,6 +92,8 @@ export interface Config {
   detect: DetectConfig;
   /** Neural voice for the assistant's answers (Piper). Off when its environment or voice file is not there. */
   piper?: PiperConfig;
+  /** The cloned voice "Olya" (ADR 0023): the main voice when its environment and reference recording exist. Piper stays as the fallback. */
+  clone?: CloneConfig;
   /** Voice assistant. "ollama" is a free model on this computer; "anthropic" needs a key. */
   assistant: { enabled: boolean; provider: "ollama" | "anthropic"; model: string; ollamaUrl: string };
   /** The oldest clips are removed beyond this size. */
@@ -135,6 +137,16 @@ function piperConfig(env: NodeJS.ProcessEnv): PiperConfig | undefined {
   const model = env.PIPER_MODEL ?? resolve(import.meta.dirname, "..", "models", "piper", "ru_RU-denis-medium.onnx");
   if (!existsSync(python) || !existsSync(model)) return undefined;
   return { python, model, port: num(env, "PIPER_PORT", 5055, 1, 65535) };
+}
+
+/** The clone is on when venv-mlx and the reference recording exist; TTS_CLONE=false turns it off. */
+function cloneConfig(env: NodeJS.ProcessEnv): CloneConfig | undefined {
+  if (env.TTS_CLONE === "false") return undefined;
+  const backend = resolve(import.meta.dirname, "..");
+  const python = env.CLONE_PYTHON ?? resolve(backend, "venv-mlx", "bin", "python");
+  const reference = env.CLONE_REFERENCE ?? resolve(backend, "data", "voice", "reference.wav");
+  if (!existsSync(python) || !existsSync(reference)) return undefined;
+  return { python, script: resolve(backend, "scripts", "clone_tts_server.py"), reference, port: num(env, "CLONE_PORT", 5056, 1, 65535), cacheDir: resolve(backend, "data", "voice", "cache"), voice: "olya" };
 }
 
 function assistantConfig(env: NodeJS.ProcessEnv): Config["assistant"] {
@@ -187,6 +199,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       discardEmpty: env.DETECT_DISCARD_EMPTY !== "false",
     },
     piper: piperConfig(env),
+    clone: cloneConfig(env),
     assistant: assistantConfig(env),
     maxStorageBytes: num(env, "MAX_STORAGE_GB", 20, 0, undefined, true) * 1024 ** 3,
     pushMinIntervalSec: num(env, "PUSH_MIN_INTERVAL_SEC", 120, 0),

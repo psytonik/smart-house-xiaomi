@@ -317,6 +317,14 @@ import { ASK_MODE, ASK_SUCTION, ASK_VACUUM, ASK_WATER, planQuick } from "../src/
 describe("quick commands (rules, no model)", () => {
   const plan = (t: string) => planQuick(plain(t))?.map((s) => [s.tool, s.input.action ?? s.input.direction ?? s.input.key ?? s.input.app ?? s.input.on]);
 
+  it("answers the time however it is asked", () => {
+    for (const q of ["Который час", "Который сейчас час?", "сколько сейчас времени", "сколько времени", "Сколько сейчас часов"]) {
+      const steps = planQuick(plain(q));
+      assert.equal(steps?.[0]?.tool, "ask", q);
+      assert.match(steps![0]!.say, /^Сейчас \d+ (час|часа|часов) \d+ (минута|минуты|минут)$/, q);
+    }
+  });
+
   it("understands the everyday phrases, as the microphone writes them", () => {
     assert.deepEqual(plan("Выключи свет."), [["lights_set", false]]);
     assert.deepEqual(plan("включи свет"), [["lights_set", true]]);
