@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
 import { buildApp } from "../src/app.js";
-import { PiperTts } from "../src/tts.js";
+import { COMMON_PHRASES, PiperTts } from "../src/tts.js";
 import { testConfig } from "./helpers.js";
 
 const auth = { authorization: `Bearer ${"t".repeat(24)}` };
@@ -78,5 +78,15 @@ describe("Piper voice", () => {
     assert.equal((await off.inject({ method: "POST", url: "/api/tts", headers: auth, payload: { text: "x" } })).statusCode, 404);
     await off.close();
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("phrases made in advance", () => {
+  it("has no repeats and nothing the voice cannot say in one go", () => {
+    assert.equal(new Set(COMMON_PHRASES).size, COMMON_PHRASES.length);
+    for (const p of COMMON_PHRASES) assert.ok(p.trim() && p.length <= 400, p);
+  });
+  it("covers the replies that were heard most often", () => {
+    for (const p of ["Пылесос подаёт голос.", "Свет включён.", "Свет выключен.", "Камера повернулась направо.", "Поменял мощность пылесоса.", "Переключаю на приставку.", "Не получилось: пылесос не отвечает."]) assert.ok(COMMON_PHRASES.includes(p), p);
   });
 });
