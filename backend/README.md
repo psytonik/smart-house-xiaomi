@@ -140,6 +140,10 @@ curl -s -H "Authorization: Bearer $T" localhost:3000/api/snapshot -o snap.jpg
 - Найти ленту и посмотреть её состояние, ничего не меняя: `node ../tools/cozylife-probe.cjs`.
 - Режим «музыка» и сцены пока не поддерживаются: в списке параметров ленты их нет, их, видимо, ведёт само приложение.
 
+## Лампочки Smart Life (Tuya)
+
+По локальной сети, без облака; список лампочек в `data/tuya-lights.json`, ключи берутся один раз ([`docs/tuya-lights.md`](../docs/tuya-lights.md)). Лампочки видны в `GET /api/lights` и у помощника («включи свет на кухне»).
+
 ## Пылесос
 
 Dreame L10 Plus по локальной сети (miIO), облако Xiaomi только для карты, позиции и истории. Подробно: [`docs/vacuum.md`](../docs/vacuum.md), решения: [ADR 0019](../docs/adr/0019-vacuum-page-and-safe-writes.md). Включается `VACUUM_IP` и `VACUUM_TOKEN`. Вход в Xiaomi для карты: `node_modules/.bin/tsx --env-file=.env ../tools/xiaomi-cloud.ts login`.

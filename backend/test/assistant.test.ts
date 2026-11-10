@@ -269,6 +269,17 @@ describe("assistant tools resolve names for the model", () => {
     await runAssistant({ brain: brainFor("lights_set", { on: true }), model: "m", call, text: "x" });
     assert.deepEqual(calls.slice(1), [["POST", "/api/lights/wifi", { on: true }], ["POST", "/api/lights/ble", { on: true }]]);
   });
+
+  it("with a group, touches only the strips or only the bulbs", async () => {
+    const calls: Array<[string, string, object | undefined]> = [];
+    const lights = [{ id: "wifi", group: "strip" }, { id: "ble", group: "strip" }, { id: "kitchen", group: "bulb" }, { id: "toilet", group: "bulb" }];
+    const call: ApiCall = async (m, u, b) => (calls.push([m, u, b]), { status: 200, body: u === "/api/lights" ? { lights } : { ok: true } });
+    await runAssistant({ brain: brainFor("lights_set", { on: false, group: "bulb" }), model: "m", call, text: "x" });
+    assert.deepEqual(calls.slice(1), [["POST", "/api/lights/kitchen", { on: false }], ["POST", "/api/lights/toilet", { on: false }]]);
+    calls.length = 0;
+    await runAssistant({ brain: brainFor("lights_set", { on: true, group: "strip" }), model: "m", call, text: "x" });
+    assert.deepEqual(calls.slice(1).map((c) => c[1]), ["/api/lights/wifi", "/api/lights/ble"]);
+  });
 });
 
 describe("assistant honesty", () => {
@@ -663,4 +674,32 @@ describe("what the voice says when a device fails", () => {
   it("keeps a reason that says something", () => {
     assert.equal(spokenFailure("vacuum_action", "the robot has to be on its dock to empty its bin"), "Не получилось: the robot has to be on its dock to empty its bin.");
   });
+});
+
+describe("lights by place", () => {
+  const lights = [
+    { id: "wifi", name: "Wi-Fi strip", group: "strip" },
+    { id: "kitchen", name: "Кухня", group: "bulb" },
+    { id: "sleeping", name: "Спальня", group: "bulb" },
+  ];
+  const brainFor = (name: string, input: object) => scripted(message("tool_use", [{ type: "tool_use", id: "t", name, input }]), message("end_turn", [{ type: "text", text: "ок" }])).brain;
+  const run = async (input: object) => {
+    const calls: string[] = [];
+    const call: ApiCall = async (m, u) => (calls.push(`${m} ${u}`), { status: 200, body: u === "/api/lights" ? { lights } : { ok: true } });
+    await runAssistant({ brain: brainFor("lights_set", input), model: "m", call, text: "x" });
+    return calls.slice(1);
+  };
+
+  it("«на кухне» touches only the kitchen lamp", async () => assert.deepEqual(await run({ on: true, where: "кухне" }), ["POST /api/lights/kitchen"]));
+  it("a place no lamp is called means all lamps", async () => assert.deepEqual(await run({ on: true, where: "комнате" }), ["POST /api/lights/wifi", "POST /api/lights/kitchen", "POST /api/lights/sleeping"]));
+});
+
+describe("quick lights phrases name their target", () => {
+  const input = (phrase: string) => planQuick(plain(phrase))?.[0]?.input;
+  it("a place", () => assert.deepEqual(input("включи на кухне свет"), { on: true, where: "кухне" }));
+  it("strips and bulbs", () => {
+    assert.deepEqual(input("включи ленту"), { on: true, group: "strip" });
+    assert.deepEqual(input("выключи лампочки"), { on: false, group: "bulb" });
+  });
+  it("nothing named stays everything", () => assert.deepEqual(input("включи свет"), { on: true }));
 });

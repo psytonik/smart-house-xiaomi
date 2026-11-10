@@ -2,12 +2,15 @@ import type { FastifyInstance } from "fastify";
 import { DownMemo } from "./breaker.js";
 import { HttpError } from "./go2rtc.js";
 import { CozyLight, LightError } from "./light.js";
+import type { TuyaBulb } from "./tuya.js";
 
 /** What the web app sees for one lamp. */
 export interface LampView {
   id: LampId;
   name: string;
   kind: "wifi" | "bluetooth";
+  /** Strips and bulbs are controlled apart: "strip" for the CozyLife and Bluetooth strips, "bulb" for Smart Life bulbs. */
+  group: "strip" | "bulb";
   reachable: boolean;
   /** false when the lamp cannot report its state (Bluetooth strips are write-only). */
   stateKnown: boolean;
@@ -17,7 +20,8 @@ export interface LampView {
   saturation?: number;
 }
 
-export type LampId = "wifi" | "ble";
+/** "wifi" (CozyLife strip), "ble" (Bluetooth strip) or the id of a Smart Life bulb from data/tuya-lights.json. */
+export type LampId = string;
 export interface LampPatch {
   on?: boolean;
   brightness?: number;
@@ -85,7 +89,7 @@ export class BleLamp {
     return res.json();
   }
 
-  async view(): Promise<Omit<LampView, "id" | "name" | "kind">> {
+  async view(): Promise<Omit<LampView, "id" | "name" | "kind" | "group">> {
     try {
       await this.call("/state");
     } catch {
@@ -114,11 +118,12 @@ const PROBE_EVERY_MS = 10_000;
 
 export interface LightsDeps {
   cozy?: CozyLight;
+  tuya?: TuyaBulb[];
   env?: NodeJS.ProcessEnv;
 }
 
 /** One place for every lamp: GET /api/lights and POST /api/lights/:id. */
-export function registerLights(app: FastifyInstance, { cozy, env = process.env }: LightsDeps): void {
+export function registerLights(app: FastifyInstance, { cozy, tuya = [], env = process.env }: LightsDeps): void {
   const token = env.BLE_HELPER_TOKEN ?? "";
   const ble =
     token.length >= 16 ? new BleLamp(`http://127.0.0.1:${Number(env.BLE_HELPER_PORT ?? 3200)}`, token) : undefined;
@@ -139,13 +144,13 @@ export function registerLights(app: FastifyInstance, { cozy, env = process.env }
   };
 
   const wifiView = async (): Promise<LampView> => {
-    const down: LampView = { id: "wifi", name: "Wi-Fi strip", kind: "wifi", reachable: false, stateKnown: false };
+    const down: LampView = { id: "wifi", name: "Wi-Fi strip", kind: "wifi", group: "strip", reachable: false, stateKnown: false };
     if (cozyDown) {
       if (Date.now() - cozyProbedAt >= PROBE_EVERY_MS) probeCozy();
       return down;
     }
     try {
-      return { id: "wifi", name: "Wi-Fi strip", kind: "wifi", reachable: true, stateKnown: true, ...(await cozy!.state()) };
+      return { id: "wifi", name: "Wi-Fi strip", kind: "wifi", group: "strip", reachable: true, stateKnown: true, ...(await cozy!.state()) };
     } catch {
       cozyDown = true;
       cozyProbedAt = Date.now();
@@ -153,9 +158,29 @@ export function registerLights(app: FastifyInstance, { cozy, env = process.env }
     }
   };
 
+  // Smart Life bulbs: each answers for itself; one that does not answer is not asked again for a few seconds.
+  const tuyaDown = new Map(tuya.map((b) => [b.cfg.id, new DownMemo(PROBE_EVERY_MS)]));
+  const tuyaView = async (b: TuyaBulb): Promise<LampView> => {
+    const base = { id: b.cfg.id, name: b.cfg.name, kind: "wifi" as const, group: "bulb" as const };
+    const memo = tuyaDown.get(b.cfg.id)!;
+    if (memo.isDown) return { ...base, reachable: false, stateKnown: false };
+    try {
+      const state = await b.state();
+      memo.ok();
+      return { ...base, reachable: true, stateKnown: true, ...state };
+    } catch {
+      memo.fail();
+      return { ...base, reachable: false, stateKnown: false };
+    }
+  };
+
   app.get("/api/lights", async () => {
     // Both lamps are asked at the same time, so the slower one does not add to the other.
-    const views = await Promise.all([cozy ? wifiView() : undefined, ble ? ble.view().then((v): LampView => ({ id: "ble", name: "Bluetooth strip", kind: "bluetooth", ...v })) : undefined]);
+    const views = await Promise.all([
+      cozy ? wifiView() : undefined,
+      ble ? ble.view().then((v): LampView => ({ id: "ble", name: "Bluetooth strip", kind: "bluetooth", group: "strip", ...v })) : undefined,
+      ...tuya.map(tuyaView),
+    ]);
     return { lights: views.filter((v): v is LampView => v !== undefined) };
   });
 
@@ -186,6 +211,15 @@ export function registerLights(app: FastifyInstance, { cozy, env = process.env }
         } else if (id === "ble") {
           if (!ble) throw new HttpError(404, "Bluetooth strip is not configured (./camera.sh ble-setup)");
           await ble.set(req.body);
+        } else if (tuya.some((b) => b.cfg.id === id)) {
+          const bulb = tuya.find((b) => b.cfg.id === id)!;
+          try {
+            await bulb.set(req.body);
+            tuyaDown.get(id)!.ok();
+          } catch (e) {
+            if (e instanceof LightError) tuyaDown.get(id)!.fail();
+            throw e;
+          }
         } else {
           throw new HttpError(404, "unknown lamp");
         }

@@ -1,6 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CloneConfig, PiperConfig } from "./tts.js";
+import type { TuyaConfig } from "./tuya.js";
 
 export interface MotionConfig {
   enabled: boolean;
@@ -85,6 +86,8 @@ export interface Config {
   /** CozyLife lamp on the local network. Lamp control is off when this is empty. */
   lightIp?: string;
   lightPort?: number;
+  /** Tuya / Smart Life bulbs (data/tuya-lights.json: id, name, ip, deviceId, localKey). None when the file is not there. */
+  tuyaLights: TuyaConfig[];
   /** Motion clips older than this many days are deleted. */
   retentionDays: number;
   /** Lifetime of signed media links, in seconds. */
@@ -183,6 +186,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     signedUrlTtlSec: num(env, "SIGNED_URL_TTL_SEC", 3600, 60),
     lightIp: env.LIGHT_IP || undefined,
     lightPort: num(env, "LIGHT_PORT", 5555, 1, 65535),
+    tuyaLights: loadTuyaLights(resolve(env.DATA_DIR ?? "./data", "tuya-lights.json")),
     motion: defaultMotion({
       enabled: env.MOTION_ENABLED !== "false",
       // MOTION_THRESHOLD is a percent of the frame that must change (default 1.2)
@@ -211,4 +215,28 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     warmupPollMs: 500,
     warmupAttempts: 12,
   };
+}
+
+/** Reads data/tuya-lights.json. A missing file means no such bulbs; a broken one is an error, so a typo is not mistaken for "no bulbs". */
+export function loadTuyaLights(file: string): TuyaConfig[] {
+  if (!existsSync(file)) return [];
+  let raw: unknown;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8"));
+  } catch {
+    throw new Error(`${file} is not valid JSON`);
+  }
+  if (!Array.isArray(raw)) throw new Error(`${file} must be a list of bulbs`);
+  const seen = new Set<string>();
+  return raw.map((r, i) => {
+    const o = (r ?? {}) as Record<string, unknown>;
+    const str = (k: string) => (typeof o[k] === "string" ? (o[k] as string).trim() : "");
+    const c: TuyaConfig = { id: str("id"), name: str("name"), ip: str("ip"), deviceId: str("deviceId"), localKey: str("localKey") };
+    if (!/^[a-z0-9-]+$/.test(c.id) || !c.name || !c.ip || !c.deviceId || c.localKey.length !== 16) {
+      throw new Error(`${file}: bulb ${i + 1} needs id (a-z, 0-9, -), name, ip, deviceId and a 16-character localKey`);
+    }
+    if (c.id === "wifi" || c.id === "ble" || seen.has(c.id)) throw new Error(`${file}: bulb id "${c.id}" is used twice`);
+    seen.add(c.id);
+    return c;
+  });
 }

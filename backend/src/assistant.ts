@@ -39,7 +39,7 @@ export const plain = (text: string) => text.trim().replace(/[.!?…]+$/u, "").to
 
 const SYSTEM = `Ты голосовой помощник умного дома: камера Xiaomi с поворотом (умеет запоминать места по имени, например «дверь», «окно», и возвращаться к ним), робот-пылесос, ленты света и телевизор TCL.
 Пользователь говорит по-русски, иногда по-английски (find the robot значит найти пылесос), всегда отвечай по-русски. Его фразу распознал микрофон, так что в ней бывают ошибки в словах: понимай по смыслу.
-Выполняй просьбу инструментами сразу, не переспрашивай, если можно сделать разумно: «включи свет» значит включить все ленты, «выключи звук» и «включи звук» это одно нажатие mute, «громче» и «тише» это кнопки громкости телевизора (две-три штуки), а яркость относится только к свету: «ярче», «темнее», «приглуши».
+Выполняй просьбу инструментами сразу, не переспрашивай, если можно сделать разумно: «включи свет» значит включить весь свет (все лампы и ленты), «включи свет на кухне» или «выключи в спальне» только лампочку этой комнаты (id из lights_list), «включи ленту» или «подсветку» только ленты (group strip), «включи лампочки» только лампочки (group bulb), «выключи звук» и «включи звук» это одно нажатие mute, «громче» и «тише» это кнопки громкости телевизора (две-три штуки), а яркость относится только к свету: «ярче», «темнее», «приглуши».
 Любая просьба про устройства, в том числе вопрос о состоянии, требует вызова инструмента: никогда не отвечай про устройства по памяти и не говори, что сделал, если не вызвал инструмент.
 Команда только запускает действие: говори «включил», «запустил», «начал уборку», а не «убрано» и не «готово», если дело ещё идёт.
 Отвечай одной-двумя короткими фразами простыми словами, без списков и разметки: ответ прочитают вслух.
@@ -92,15 +92,16 @@ export const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "lights_list",
-    description: "Какие ленты света есть, их id, включены ли и какая яркость.",
+    description: "Какие лампочки (Кухня, Спальня, Туалет) и ленты света есть: id, название, group (bulb или strip), включены ли и какая яркость.",
     input_schema: object({}),
   },
   {
     name: "lights_set",
-    description: "Включить, выключить или настроить ленты света. Без id действует на все ленты сразу. Указывай только то, что меняется.",
+    description: "Включить, выключить или настроить свет. Без id действует на все лампы и ленты сразу; если названа комната («на кухне», «в спальне», «в туалете»), укажи id этой лампы. Указывай только то, что меняется.",
     input_schema: object(
       {
-        id: { type: "string", description: "id из lights_list (wifi или ble); не указывай, если нужны все ленты" },
+        id: { type: "string", description: "id лампы из lights_list (kitchen, sleeping, toilet, wifi, ble); не указывай, если нужны все" },
+        group: { type: "string", enum: ["strip", "bulb"], description: "только ленты (strip: подсветка, лента) или только лампочки (bulb); не указывай, если не сказано иначе" },
         on: { type: "boolean" },
         brightness: { type: "integer", minimum: 0, maximum: 100 },
         hue: { type: "integer", minimum: 0, maximum: 360, description: "цвет: 0 красный, 120 зелёный, 240 синий" },
@@ -278,12 +279,17 @@ async function runTool(name: string, input: Record<string, unknown>, call: ApiCa
     case "lights_list":
       return call("GET", "/api/lights");
     case "lights_set": {
-      const { id, ...raw } = input;
+      const { id, group, where, ...raw } = input;
       const patch = tidyLight(raw);
       if (id) return call("POST", `/api/lights/${encodeURIComponent(String(id))}`, patch);
       const list = await call("GET", "/api/lights");
-      const ids = ((list.body as { lights?: Array<{ id: string }> }).lights ?? []).map((l) => l.id);
-      if (list.status >= 400 || ids.length === 0) return list.status >= 400 ? list : { status: 404, body: { error: "no lights are configured" } };
+      const all = ((list.body as { lights?: Array<{ id: string; name?: string; group?: string }> }).lights ?? []).filter((l) => !group || l.group === group);
+      // «на кухне» picks the lamp called Кухня; a place no lamp is called means nothing was singled out, so all of them
+      const place = typeof where === "string" ? all.find((l) => matchesRoom(where.toLowerCase(), l.name ?? "")) : undefined;
+      const lamps = place ? [place] : all;
+      const ids = lamps.map((l) => l.id);
+      if (list.status >= 400) return list;
+      if (ids.length === 0) return { status: 404, body: { error: group ? `no lights of kind ${String(group)}` : "no lights are configured" } };
       const results = await Promise.all(ids.map((lamp) => call("POST", `/api/lights/${encodeURIComponent(lamp)}`, patch)));
       return results.find((r) => r.status >= 400) ?? results[0]!;
     }

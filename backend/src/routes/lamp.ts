@@ -46,5 +46,5 @@ export function lampRoutes(app: FastifyInstance, ctx: AppContext): void {
     },
   );
 
-  registerLights(app, { cozy: light }); // both lamps in one list, see lights.ts
+  registerLights(app, { cozy: light, tuya: ctx.tuya }); // both lamps in one list, see lights.ts
 }

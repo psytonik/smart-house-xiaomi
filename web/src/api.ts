@@ -179,6 +179,8 @@ export interface Lamp {
   id: string;
   name: string;
   kind: "wifi" | "bluetooth";
+  /** Strips and bulbs have their own controls. */
+  group: "strip" | "bulb";
   reachable: boolean;
   /** false when the lamp can't report its state, so the values shown are what was last sent. */
   stateKnown: boolean;

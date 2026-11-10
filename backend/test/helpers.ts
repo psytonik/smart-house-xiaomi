@@ -16,6 +16,7 @@ export function testConfig(over: Partial<Config> & { dataDir: string }): Config 
     input: "unused",
     ffmpegPath: "ffmpeg",
     retentionDays: 7,
+    tuyaLights: [],
     signedUrlTtlSec: 3600,
     detect: { enabled: false, modelPath: "", minScore: 0.4, maxFrames: 5, discardEmpty: true },
     assistant: { enabled: false, provider: "anthropic", model: "claude-opus-5-5", ollamaUrl: "http://127.0.0.1:1" },

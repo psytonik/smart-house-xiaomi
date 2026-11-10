@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from "react";
 import { AuthError, getLamps, setLamp, type Lamp, type LightPatch } from "../api";
 
 interface Props {
@@ -13,16 +13,15 @@ function lampState(l: Lamp): string {
   return `Connected\n${l.on ? `On, ${l.brightness ?? 0}%` : "Off"}${note}`;
 }
 
-/**
- * All lamps (Wi-Fi and Bluetooth) behind one set of controls: a change goes to every lamp that answers.
- * The picture shown is the first reachable lamp that reports its state.
- */
+const GROUPS: Array<{ group: Lamp["group"]; title: string }> = [
+  { group: "strip", title: "Light strips" },
+  { group: "bulb", title: "Bulbs" },
+];
+
+/** Strips and bulbs are two sets of controls: a change in one never moves the other. */
 export function Lights({ onAuthError, onError }: Props) {
   const [lamps, setLamps] = useState<Lamp[] | null>(null);
-  const [view, setView] = useState<LightPatch>({});
   const busy = useRef(0); // >0 while the user is changing something; polling waits
-  const timer = useRef<number>(0);
-  const pending = useRef<LightPatch>({});
 
   const load = useCallback(() => {
     if (busy.current > 0) return;
@@ -39,19 +38,9 @@ export function Lights({ onAuthError, onError }: Props) {
     return () => clearInterval(t);
   }, [load]);
 
-  useEffect(() => () => window.clearTimeout(timer.current), []);
-
-  // Take the server's picture again whenever it changes, unless the user is mid-change.
-  useEffect(() => {
-    if (!lamps || busy.current > 0) return;
-    const ref = lamps.find((l) => l.reachable && l.stateKnown) ?? lamps.find((l) => l.reachable);
-    if (ref) setView({ on: ref.on, brightness: ref.brightness, hue: ref.hue, saturation: ref.saturation });
-  }, [lamps]);
-
   if (!lamps) return <p className="hint">Looking for lamps…</p>;
   if (lamps.length === 0) return <p className="hint">No lamps are set up.</p>;
 
-  // One lamp on its own; the sliders below still move all of them together.
   const toggleOne = (l: Lamp) => {
     busy.current += 1;
     setLamps((all) => all && all.map((x) => (x.id === l.id ? { ...x, on: !l.on } : x)));
@@ -62,6 +51,44 @@ export function Lights({ onAuthError, onError }: Props) {
         load();
       });
   };
+
+  return (
+    <>
+      {GROUPS.map(({ group, title }) => {
+        const inGroup = lamps.filter((l) => l.group === group);
+        return inGroup.length === 0 ? null : (
+          <LampGroup key={group} title={title} lamps={inGroup} busy={busy} load={load} toggleOne={toggleOne} onAuthError={onAuthError} onError={onError} />
+        );
+      })}
+    </>
+  );
+}
+
+interface GroupProps extends Props {
+  title: string;
+  lamps: Lamp[];
+  busy: MutableRefObject<number>;
+  load: () => void;
+  toggleOne: (l: Lamp) => void;
+}
+
+/**
+ * One set of lamps behind one set of controls: a change goes to every lamp of the group that answers.
+ * The picture shown is the first reachable lamp that reports its state.
+ */
+function LampGroup({ title, lamps, busy, load, toggleOne, onAuthError, onError }: GroupProps) {
+  const [view, setView] = useState<LightPatch>({});
+  const timer = useRef<number>(0);
+  const pending = useRef<LightPatch>({});
+
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  // Take the server's picture again whenever it changes, unless the user is mid-change.
+  useEffect(() => {
+    if (busy.current > 0) return;
+    const ref = lamps.find((l) => l.reachable && l.stateKnown) ?? lamps.find((l) => l.reachable);
+    if (ref) setView({ on: ref.on, brightness: ref.brightness, hue: ref.hue, saturation: ref.saturation });
+  }, [lamps, busy]);
 
   const reachable = lamps.filter((l) => l.reachable);
   const down = lamps.filter((l) => !l.reachable);
@@ -92,10 +119,10 @@ export function Lights({ onAuthError, onError }: Props) {
 
   if (reachable.length === 0) {
     return (
-      <section className="light" aria-label="Lights">
-        <h2>Lights</h2>
+      <section className="light" aria-label={title}>
+        <h2>{title}</h2>
         <p className="hint">
-          No lamp is answering. Check that they are powered, the Wi-Fi strip is on the same network, and everything was started with ./camera.sh from Terminal.app
+          No lamp here is answering. Check that they are powered, on the same network, and everything was started with ./camera.sh from Terminal.app
           (close the phone app, it holds the Bluetooth strip).
         </p>
       </section>
@@ -122,9 +149,9 @@ export function Lights({ onAuthError, onError }: Props) {
   );
 
   return (
-    <section className="light" aria-label="Lights">
+    <section className="light" aria-label={title}>
       <div className="light-head">
-        <h2>Lights</h2>
+        <h2>{title}</h2>
         <button
           type="button"
           className="power"
@@ -135,11 +162,11 @@ export function Lights({ onAuthError, onError }: Props) {
           {view.on ? "On" : "Off"}
         </button>
       </div>
-      <ul className="lamp-status" aria-label="Lamp status">
+      <ul className="lamp-status" aria-label={`${title} status`}>
         {lamps.map((l) => (
           <li key={l.id} className={l.reachable ? (l.on ? "on" : "off") : "down"}>
             <span className="dot" aria-hidden="true" />
-            <span className="lamp-kind">{l.kind === "bluetooth" ? "Bluetooth" : "Wi-Fi"}</span>
+            <span className="lamp-kind">{l.name}</span>
             <span className="lamp-state">{lampState(l)}</span>
             {l.reachable && (
               <button type="button" className="lamp-toggle" aria-pressed={!!l.on} aria-label={`${l.name}: ${l.on ? "turn off" : "turn on"}`} onClick={() => toggleOne(l)}>

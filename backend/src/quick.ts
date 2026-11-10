@@ -98,6 +98,19 @@ function suctionLevel(t: string, needsPowerWord: boolean): "quiet" | "standard" 
   return null;
 }
 
+/**
+ * Which lamps a light phrase is about: «на кухне» names a place (the assistant matches it to a lamp's name and, when no lamp has that
+ * name, falls back to all of them), «ленту» / «подсветку» only the strips, «лампочки» only the bulbs. Nothing named means everything.
+ */
+function lightTarget(t: string): Record<string, unknown> {
+  const target: Record<string, unknown> = {};
+  const place = /(?:^|\s)(?:в|во|на)\s+([а-яё]{4,})/.exec(t)?.[1];
+  if (place) target.where = place;
+  if (has(t, /(лент|подсветк)/)) target.group = "strip";
+  else if (has(t, /лампочк/)) target.group = "bulb";
+  return target;
+}
+
 /** One short command (no "and") to the steps it means, or null if it is not one the rules know. */
 function planOne(part: string): Step[] | null {
   const t = part.trim();
@@ -121,13 +134,14 @@ function planOne(part: string): Step[] | null {
 
   // --- light ---
   if (has(t, WORDS.light) && !has(t, WORDS.vacuum) && !has(t, WORDS.camera)) {
+    const target = lightTarget(t);
     for (const [re, name, patch] of COLORS) {
-      if (has(t, re)) return [{ tool: "lights_set", input: { on: true, brightness: 100, saturation: 100, ...patch }, say: `Свет стал ${name}` }];
+      if (has(t, re)) return [{ tool: "lights_set", input: { on: true, brightness: 100, saturation: 100, ...patch, ...target }, say: `Свет стал ${name}` }];
     }
-    if (has(t, /(ярче|поярче|светлее|посветлее|максимум)/)) return [{ tool: "lights_set", input: { on: true, brightness: 100 }, say: "Сделал ярче" }];
-    if (has(t, /(темнее|потемнее|приглуши|тусклее|потусклее)/)) return [{ tool: "lights_set", input: { on: true, brightness: 30 }, say: "Приглушил свет" }];
-    if (has(t, WORDS.off)) return [{ tool: "lights_set", input: { on: false }, say: "Свет выключен" }];
-    if (has(t, WORDS.on)) return [{ tool: "lights_set", input: { on: true }, say: "Свет включён" }];
+    if (has(t, /(ярче|поярче|светлее|посветлее|максимум)/)) return [{ tool: "lights_set", input: { on: true, brightness: 100, ...target }, say: "Сделал ярче" }];
+    if (has(t, /(темнее|потемнее|приглуши|тусклее|потусклее)/)) return [{ tool: "lights_set", input: { on: true, brightness: 30, ...target }, say: "Приглушил свет" }];
+    if (has(t, WORDS.off)) return [{ tool: "lights_set", input: { on: false, ...target }, say: "Свет выключен" }];
+    if (has(t, WORDS.on)) return [{ tool: "lights_set", input: { on: true, ...target }, say: "Свет включён" }];
     return null;
   }
 

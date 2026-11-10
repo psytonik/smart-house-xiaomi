@@ -6,6 +6,7 @@ import { DeviceStore } from "./devices.js";
 import { ObjectDetector } from "./detect.js";
 import { Go2rtc } from "./go2rtc.js";
 import { CozyLight } from "./light.js";
+import { TuyaBulb } from "./tuya.js";
 import { PtzPresetStore } from "./ptzPresets.js";
 import { PushService } from "./push.js";
 import { CloneTts, PiperTts } from "./tts.js";
@@ -34,6 +35,8 @@ export interface AppContext {
   /** Devices found on the network or typed in (data/devices.json). */
   devices: DeviceStore;
   light?: CozyLight;
+  /** Smart Life bulbs, one client each. */
+  tuya: TuyaBulb[];
   /** The neural voice, when Piper is set up. */
   tts?: PiperTts | CloneTts;
   snapshotsDir: string;
@@ -84,6 +87,7 @@ export async function createContext(cfg: Config, log: { info: (m: string) => voi
     devices,
     ptzPresets,
     tts,
+    tuya: cfg.tuyaLights.map((c) => new TuyaBulb(c)),
     light: cfg.lightIp ? new CozyLight(cfg.lightIp, cfg.lightPort) : undefined,
     snapshotsDir,
     async close() {
