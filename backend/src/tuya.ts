@@ -19,7 +19,10 @@ const VERSION_HEADER = Buffer.concat([Buffer.from("3.5"), Buffer.alloc(12)]);
 const TIMEOUT_MS = 4000;
 
 /** Datapoints of a Tuya light ("dj" category). Values are in the bulb's units: brightness and saturation 0..1000. */
-const DP = { power: "20", mode: "21", bright: "22", colour: "24" } as const;
+const DP = { power: "20", mode: "21", bright: "22", temp: "23", colour: "24" } as const;
+/** The warmth datapoint runs 0..1000 over this many kelvin (the Smart Life app labels 1000 as 6500K). */
+export const KELVIN_MIN = 2700;
+export const KELVIN_MAX = 6500;
 const MIN_BRIGHT = 10;
 
 export interface TuyaState {
@@ -30,6 +33,8 @@ export interface TuyaState {
   hue: number;
   /** 0..100 (0 in white mode) */
   saturation: number;
+  /** Warmth of the white light, 2700..6500 K. */
+  temperature: number;
 }
 
 export interface TuyaPatch {
@@ -37,6 +42,8 @@ export interface TuyaPatch {
   brightness?: number;
   hue?: number;
   saturation?: number;
+  /** Kelvin, 2700..6500: switches the bulb to its white light. */
+  temperature?: number;
 }
 
 export interface TuyaConfig {
@@ -112,12 +119,16 @@ function fromColourDp(v: unknown): { hue: number; sat: number; val: number } | u
   return { hue: parseInt(v.slice(0, 4), 16), sat: parseInt(v.slice(4, 8), 16), val: parseInt(v.slice(8, 12), 16) };
 }
 
+const toKelvin = (dp: unknown) => Math.round((KELVIN_MIN + ((typeof dp === "number" ? dp : 1000) / 1000) * (KELVIN_MAX - KELVIN_MIN)) / 100) * 100;
+const fromKelvin = (k: number) => clamp(((clamp(k, KELVIN_MIN, KELVIN_MAX) - KELVIN_MIN) / (KELVIN_MAX - KELVIN_MIN)) * 1000, 0, 1000);
+
 export function fromDps(dps: Record<string, unknown>): TuyaState {
   const on = dps[DP.power] === true;
+  const temperature = toKelvin(dps[DP.temp]);
   const colour = dps[DP.mode] === "colour" ? fromColourDp(dps[DP.colour]) : undefined;
-  if (colour) return { on, brightness: Math.round(colour.val / 10), hue: colour.hue, saturation: Math.round(colour.sat / 10) };
+  if (colour) return { on, brightness: Math.round(colour.val / 10), hue: colour.hue, saturation: Math.round(colour.sat / 10), temperature };
   const b = typeof dps[DP.bright] === "number" ? (dps[DP.bright] as number) : 1000;
-  return { on, brightness: Math.round(b / 10), hue: 0, saturation: 0 };
+  return { on, brightness: Math.round(b / 10), hue: 0, saturation: 0, temperature };
 }
 
 /** What to send to make `patch` true when the bulb is in `now`. Empty when there is nothing to change. */
@@ -125,7 +136,13 @@ export function toDps(patch: TuyaPatch, now: Record<string, unknown>): Record<st
   const dps: Record<string, unknown> = {};
   if (patch.on !== undefined) dps[DP.power] = patch.on;
   const wantsColour = patch.hue !== undefined || patch.saturation !== undefined;
-  if (wantsColour) {
+  if (patch.temperature !== undefined && !wantsColour) {
+    // the bulb's own white at the asked warmth
+    dps[DP.mode] = "white";
+    dps[DP.temp] = fromKelvin(patch.temperature);
+    if (patch.brightness !== undefined) dps[DP.bright] = Math.max(MIN_BRIGHT, clamp(patch.brightness * 10, 0, 1000));
+    if (patch.on === undefined && now[DP.power] !== true) dps[DP.power] = true; // a warmth command lights the bulb
+  } else if (wantsColour) {
     const cur = fromDps(now);
     const value = Math.max(MIN_BRIGHT, patch.brightness !== undefined ? patch.brightness * 10 : cur.brightness * 10);
     if (patch.saturation === 0) {
@@ -269,7 +286,7 @@ export class TuyaBulb {
   set(patch: TuyaPatch): Promise<void> {
     return this.enqueue(() =>
       this.session(async (send) => {
-        const needsNow = patch.brightness !== undefined || patch.hue !== undefined || patch.saturation !== undefined;
+        const needsNow = patch.brightness !== undefined || patch.hue !== undefined || patch.saturation !== undefined || patch.temperature !== undefined;
         const now = needsNow ? await this.readDps(send) : {};
         const dps = toDps(patch, now);
         if (Object.keys(dps).length === 0) return;

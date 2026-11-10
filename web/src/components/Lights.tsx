@@ -87,7 +87,7 @@ function LampGroup({ title, lamps, busy, load, toggleOne, onAuthError, onError }
   useEffect(() => {
     if (busy.current > 0) return;
     const ref = lamps.find((l) => l.reachable && l.stateKnown) ?? lamps.find((l) => l.reachable);
-    if (ref) setView({ on: ref.on, brightness: ref.brightness, hue: ref.hue, saturation: ref.saturation });
+    if (ref) setView({ on: ref.on, brightness: ref.brightness, hue: ref.hue, saturation: ref.saturation, temperature: ref.temperature });
   }, [lamps, busy]);
 
   const reachable = lamps.filter((l) => l.reachable);
@@ -133,15 +133,17 @@ function LampGroup({ title, lamps, busy, load, toggleOne, onAuthError, onError }
   const sat = view.saturation ?? 100;
   const swatch = `hsl(${hue} ${Math.max(sat, 25)}% 55%)`;
 
-  const slider = (key: "brightness" | "hue" | "saturation", label: string, value: number, max: number, cls = "") => (
+  const hasWarmth = lamps.some((l) => l.group === "bulb" && l.temperature !== undefined);
+  const slider = (key: "brightness" | "hue" | "saturation" | "temperature", label: string, value: number, max: number, cls = "", min = 0, step = 1) => (
     <label className="slider" htmlFor={`lamp-all-${key}`}>
       <span>{label}</span>
       <input
         id={`lamp-all-${key}`}
         className={cls}
         type="range"
-        min={0}
+        min={min}
         max={max}
+        step={step}
         value={value}
         onChange={(e) => send({ [key]: Number(e.target.value) } as LightPatch, 200)}
       />
@@ -180,6 +182,7 @@ function LampGroup({ title, lamps, busy, load, toggleOne, onAuthError, onError }
       {slider("brightness", "Brightness", view.brightness ?? 0, 100)}
       {slider("hue", "Colour", hue, 360, "hue")}
       {slider("saturation", "Saturation", sat, 100)}
+      {hasWarmth && slider("temperature", `White warmth ${view.temperature ?? 6500} K (2700 warm, 6500 cool)`, view.temperature ?? 6500, 6500, "", 2700, 100)}
       {down.length > 0 && <p className="hint">Changes go to the lamps that answer.</p>}
       {blind && <p className="hint">A Bluetooth strip can't report its state: it shows what was sent last.</p>}
     </section>

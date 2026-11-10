@@ -173,6 +173,8 @@ export interface LightPatch {
   brightness?: number;
   hue?: number;
   saturation?: number;
+  /** Kelvin 2700..6500; bulbs only. */
+  temperature?: number;
 }
 
 export interface Lamp {
@@ -188,6 +190,8 @@ export interface Lamp {
   brightness?: number;
   hue?: number;
   saturation?: number;
+  /** Kelvin; bulbs report it. */
+  temperature?: number;
 }
 
 export async function getLamps(): Promise<Lamp[]> {

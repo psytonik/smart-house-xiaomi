@@ -694,12 +694,49 @@ describe("lights by place", () => {
   it("a place no lamp is called means all lamps", async () => assert.deepEqual(await run({ on: true, where: "комнате" }), ["POST /api/lights/wifi", "POST /api/lights/kitchen", "POST /api/lights/sleeping"]));
 });
 
+describe("a lamp named without the word «свет»", () => {
+  const lights = [{ id: "kitchen", name: "Кухня", group: "bulb" }, { id: "sleeping", name: "Спальня", group: "bulb" }];
+  const brainFor = (name: string, input: object) => scripted(message("tool_use", [{ type: "tool_use", id: "t", name, input }]), message("end_turn", [{ type: "text", text: "ок" }])).brain;
+  const run = async (text: string) => {
+    const calls: Array<[string, string, object | undefined]> = [];
+    const call: ApiCall = async (m, u, b) => (calls.push([m, u, b]), { status: 200, body: u === "/api/lights" ? { lights } : { ok: true } });
+    const out = await runAssistant({ brain: brainFor("none", {}), model: "m", call, text });
+    return { posts: calls.filter((c) => c[0] === "POST"), out };
+  };
+
+  it("«Включи в спальне» turns on the bedroom lamp, also after the wake word", async () => {
+    assert.deepEqual((await run("Включи в спальне")).posts, [["POST", "/api/lights/sleeping", { on: true }]]);
+    assert.deepEqual((await run("каппара Включи в спальне")).posts, [["POST", "/api/lights/sleeping", { on: true }]]);
+  });
+  it("«выключи кухню» turns it off", async () => assert.deepEqual((await run("выключи кухню")).posts, [["POST", "/api/lights/kitchen", { on: false }]]));
+  it("«включи кондиционер в спальне» is not about the lamp", async () => assert.deepEqual((await run("включи кондиционер в спальне")).posts, []));
+  it("«выключи тёплый свет» turns off, not on", async () => {
+    const out = planQuick(plain("выключи тёплый свет"));
+    assert.deepEqual(out?.[0]?.input, { on: false });
+  });
+  it("a place no lamp is called is left to the model", async () => assert.deepEqual((await run("включи в гостиной")).posts, []));
+});
+
 describe("quick lights phrases name their target", () => {
   const input = (phrase: string) => planQuick(plain(phrase))?.[0]?.input;
   it("a place", () => assert.deepEqual(input("включи на кухне свет"), { on: true, where: "кухне" }));
   it("strips and bulbs", () => {
     assert.deepEqual(input("включи ленту"), { on: true, group: "strip" });
     assert.deepEqual(input("выключи лампочки"), { on: false, group: "bulb" });
+  });
+  it("«полоска» is a strip; the colour is red even when «белой» is also said", () =>
+    assert.deepEqual(input("каппара с белой полоски красного цвета"), { on: true, brightness: 100, saturation: 100, hue: 0, group: "strip" }));
+  it("«сделай свет салатовый» is a light-green colour for all lamps", () =>
+    assert.deepEqual(input("каппара сделай свет салатовый"), { on: true, brightness: 100, saturation: 100, hue: 90 }));
+  it("warmth words and kelvin go to the bulbs only", () => {
+    assert.deepEqual(input("каппара включи тёплый свет"), { on: true, temperature: 2700, group: "bulb" });
+    assert.deepEqual(input("сделай свет холодным"), { on: true, temperature: 6500, group: "bulb" });
+    assert.deepEqual(input("свет на кухне 4000 кельвин"), { on: true, temperature: 4000, group: "bulb", where: "кухне" });
+  });
+  it("kelvin with the short «к», and a colour beats a warmth word", () => {
+    assert.deepEqual(input("свет 4000 к"), { on: true, temperature: 4000, group: "bulb" });
+    assert.deepEqual(input("сделай тёплый красный свет"), { on: true, brightness: 100, saturation: 100, hue: 0 });
+    assert.deepEqual(input("включи свет в холодной комнате"), { on: true, where: "холодной" });
   });
   it("nothing named stays everything", () => assert.deepEqual(input("включи свет"), { on: true }));
 });

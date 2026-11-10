@@ -38,8 +38,8 @@ describe("Tuya 3.5 frames", () => {
 
 describe("Tuya datapoints", () => {
   it("reads white and colour mode", () => {
-    assert.deepEqual(fromDps({ "20": true, "21": "white", "22": 500 }), { on: true, brightness: 50, hue: 0, saturation: 0 });
-    assert.deepEqual(fromDps({ "20": false, "21": "colour", "24": toColourDp(120, 1000, 800) }), { on: false, brightness: 80, hue: 120, saturation: 100 });
+    assert.deepEqual(fromDps({ "20": true, "21": "white", "22": 500 }), { on: true, brightness: 50, hue: 0, saturation: 0, temperature: 6500 });
+    assert.deepEqual(fromDps({ "20": false, "21": "colour", "24": toColourDp(120, 1000, 800), "23": 0 }), { on: false, brightness: 80, hue: 120, saturation: 100, temperature: 2700 });
   });
 
   it("colour wins over brightness and lights a bulb that is off", () => {
@@ -51,6 +51,13 @@ describe("Tuya datapoints", () => {
 
   it("saturation 0 goes back to the bulb's own white", () => {
     assert.deepEqual(toDps({ saturation: 0, brightness: 40 }, { "20": true, "21": "colour", "24": toColourDp(10, 1000, 1000) }), { "21": "white", "22": 400 });
+  });
+
+  it("a warmth in kelvin goes to the white light (2700 K is 0, 6500 K is 1000) and lights a bulb that is off", () => {
+    assert.deepEqual(toDps({ temperature: 2700 }, { "20": false, "21": "colour" }), { "21": "white", "23": 0, "20": true });
+    assert.deepEqual(toDps({ temperature: 6500, brightness: 50 }, { "20": true }), { "21": "white", "23": 1000, "22": 500 });
+    assert.equal(toDps({ temperature: 4600 }, { "20": true })["23"], 500);
+    assert.deepEqual(fromDps({ "20": true, "21": "white", "23": 500 }).temperature, 4600);
   });
 
   it("brightness in colour mode changes the value part only; in white mode the white brightness (never below 10)", () => {
@@ -103,7 +110,7 @@ describe("Tuya bulb session (fake bulb)", () => {
 
   it("reads the state through a negotiated session", async () => {
     const port = await fakeBulb({ "20": true, "21": "white", "22": 300 }, []);
-    assert.deepEqual(await new TuyaBulb(cfg, port).state(), { on: true, brightness: 30, hue: 0, saturation: 0 });
+    assert.deepEqual(await new TuyaBulb(cfg, port).state(), { on: true, brightness: 30, hue: 0, saturation: 0, temperature: 6500 });
   });
 
   it("sends a control with only what changed", async () => {

@@ -18,6 +18,8 @@ export interface LampView {
   brightness?: number;
   hue?: number;
   saturation?: number;
+  /** Kelvin; only bulbs report it. */
+  temperature?: number;
 }
 
 /** "wifi" (CozyLife strip), "ble" (Bluetooth strip) or the id of a Smart Life bulb from data/tuya-lights.json. */
@@ -27,6 +29,8 @@ export interface LampPatch {
   brightness?: number;
   hue?: number;
   saturation?: number;
+  /** Kelvin 2700..6500; only bulbs take it, the strips ignore it. */
+  temperature?: number;
 }
 
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(n)));
@@ -150,7 +154,9 @@ export function registerLights(app: FastifyInstance, { cozy, tuya = [], env = pr
       return down;
     }
     try {
-      return { id: "wifi", name: "Wi-Fi strip", kind: "wifi", group: "strip", reachable: true, stateKnown: true, ...(await cozy!.state()) };
+      // the strip's own warmth is a 0..100 scale, not kelvin: only bulbs report a temperature
+      const { temperature: _own, ...state } = await cozy!.state();
+      return { id: "wifi", name: "Wi-Fi strip", kind: "wifi", group: "strip", reachable: true, stateKnown: true, ...state };
     } catch {
       cozyDown = true;
       cozyProbedAt = Date.now();
@@ -197,6 +203,7 @@ export function registerLights(app: FastifyInstance, { cozy, tuya = [], env = pr
             brightness: { type: "integer", minimum: 0, maximum: 100 },
             hue: { type: "integer", minimum: 0, maximum: 360 },
             saturation: { type: "integer", minimum: 0, maximum: 100 },
+            temperature: { type: "integer", minimum: 2700, maximum: 6500 },
           },
         },
       },
@@ -206,11 +213,15 @@ export function registerLights(app: FastifyInstance, { cozy, tuya = [], env = pr
       try {
         if (id === "wifi") {
           if (!cozy) throw new HttpError(404, "Wi-Fi strip is not configured (set LIGHT_IP)");
-          await cozy.set(req.body);
+          const { temperature: _t, ...forStrip } = req.body; // warmth is the bulbs' own
+          if (Object.keys(forStrip).length === 0) return { ok: true }; // only a warmth: nothing for a strip to do, and no claim that it answered
+          await cozy.set(forStrip);
           cozyDown = false;
         } else if (id === "ble") {
           if (!ble) throw new HttpError(404, "Bluetooth strip is not configured (./camera.sh ble-setup)");
-          await ble.set(req.body);
+          const { temperature: _t, ...forStrip } = req.body;
+          if (Object.keys(forStrip).length === 0) return { ok: true };
+          await ble.set(forStrip);
         } else if (tuya.some((b) => b.cfg.id === id)) {
           const bulb = tuya.find((b) => b.cfg.id === id)!;
           try {

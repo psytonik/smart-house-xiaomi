@@ -118,3 +118,18 @@ describe("lights API with a Bluetooth helper (mock)", () => {
     assert.equal(lightHits - before, 1, "the helper was asked once, the second call failed without it");
   });
 });
+
+describe("the Wi-Fi strip in the lamp list", () => {
+  it("has no temperature: its own 0..100 warmth is not kelvin, only bulbs report one", async () => {
+    const { default: Fastify } = await import("fastify");
+    const { registerLights } = await import("../src/lights.js");
+    const app = Fastify();
+    const cozy = { state: async () => ({ on: true, brightness: 50, hue: 0, saturation: 0, temperature: 40 }) };
+    registerLights(app, { cozy: cozy as never, env: {} });
+    const body = (await app.inject({ method: "GET", url: "/api/lights" })).json() as { lights: Array<Record<string, unknown>> };
+    assert.equal(body.lights[0]!.id, "wifi");
+    assert.equal(body.lights[0]!.group, "strip");
+    assert.equal("temperature" in body.lights[0]!, false);
+    await app.close();
+  });
+});

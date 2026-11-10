@@ -106,6 +106,7 @@ export const TOOLS: Anthropic.Tool[] = [
         brightness: { type: "integer", minimum: 0, maximum: 100 },
         hue: { type: "integer", minimum: 0, maximum: 360, description: "цвет: 0 красный, 120 зелёный, 240 синий" },
         saturation: { type: "integer", minimum: 0, maximum: 100 },
+        temperature: { type: "integer", minimum: 2700, maximum: 6500, description: "тепло белого света у лампочек в кельвинах: 2700 тёплый, 4000 нейтральный, 6500 холодный" },
       },
     ),
   },
@@ -195,6 +196,11 @@ function tidyLight(patch: Record<string, unknown>): Record<string, unknown> {
   if (out.brightness !== undefined) out.brightness = clamp(out.brightness, 100);
   if (out.saturation !== undefined) out.saturation = clamp(out.saturation, 100);
   if (out.hue !== undefined) out.hue = clamp(out.hue, 360);
+  if (out.temperature !== undefined) {
+    const k = Math.round(Number(out.temperature));
+    if (Number.isFinite(k)) out.temperature = Math.max(2700, Math.min(6500, k));
+    else delete out.temperature; // a word instead of a number: nothing to set
+  }
   return out;
 }
 
@@ -467,6 +473,28 @@ async function placeInPhrase(phrase: string, call: ApiCall): Promise<Step[] | nu
   }
 }
 
+/** «Включи в спальне», «выключи туалет»: a lamp is named without the word «свет». Only on or off, and only when a lamp has that name. */
+async function lampInPhrase(phrase: string, call: ApiCall): Promise<Step[] | null> {
+  const on = /(включи|зажги|запали)/.test(phrase);
+  const off = /(выключи|погаси|потуши|выруби|отключи)/.test(phrase);
+  if (on === off) return null;
+  // Only «включи в спальне» and the like: besides the verb and a place, only a wake word at the very start may be left.
+  // «Включи кондиционер в спальне» is about something else and is not taken for the lamp.
+  const words = phrase.split(/\s+/).filter(Boolean);
+  const FILLER = /^(включи|зажги|запали|выключи|погаси|потуши|выруби|отключи|в|во|на|мне|пожалуйста|свет|лампу|лампочку)$/;
+  const rest = words.map((w, i) => ({ w, i })).filter(({ w }) => !FILLER.test(w));
+  const room = rest[rest.length - 1];
+  if (!room || rest.length > 2 || (rest.length === 2 && rest[0]!.i !== 0)) return null;
+  try {
+    const list = await call("GET", "/api/lights");
+    const lamps = (list.body as { lights?: Array<{ id: string; name?: string }> }).lights ?? [];
+    const hit = list.status < 400 ? lamps.find((l) => l.name && matchesRoom(room.w, l.name!)) : undefined;
+    return hit ? [{ tool: "lights_set", input: { id: hit.id, on }, say: `${on ? "Включила" : "Выключила"}: ${hit.name}` }] : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The model's own words for "I could not do that". */
 const NOT_UNDERSTOOD = /(не (могу|знаю|понял|поняла|умею|получилось)|нет (функци|инструмент|возможност)|у меня нет)/i;
 
@@ -483,7 +511,7 @@ export async function runAssistant(opts: { brain: Brain; model: string; call: Ap
   // What the household taught it, then the everyday rules: instant, free, and never "say it and not do it". The model is for the rest.
   const taught = memory?.find(phrase);
   const lastSaid = [...(opts.history ?? [])].reverse().find((t) => t.role === "assistant")?.content;
-  const steps = taught ?? planFollowUp(phrase, lastSaid) ?? (await placeInPhrase(phrase, opts.call)) ?? planQuick(phrase);
+  const steps = taught ?? planFollowUp(phrase, lastSaid) ?? (await placeInPhrase(phrase, opts.call)) ?? planQuick(phrase) ?? (await lampInPhrase(phrase, opts.call));
   let via: "rules" | "learned" | "model" = taught ? "learned" : "rules";
   let result: AssistantReply;
   if (steps) result = await runSteps(steps, opts.call, opts.pause);

@@ -27,11 +27,16 @@ export const ASK_VACUUM = "Что сделать с пылесосом: запу
 const COLORS: Array<[RegExp, string, Record<string, unknown>]> = [
   [/красн/, "красным", { hue: 0 }],
   [/оранж/, "оранжевым", { hue: 30 }],
+  [/золот/, "золотым", { hue: 45 }],
   [/[жш]елт|жёлт/, "жёлтым", { hue: 55 }],
+  [/салат|лайм/, "салатовым", { hue: 90 }],
+  [/м[яе]тн/, "мятным", { hue: 160 }],
   [/зел[её]н/, "зелёным", { hue: 120 }],
   [/голуб|бирюз/, "голубым", { hue: 190 }],
   [/син/, "синим", { hue: 240 }],
   [/фиолет|сирен/, "фиолетовым", { hue: 280 }],
+  [/пурпур|малинов|фукси/, "малиновым", { hue: 330 }],
+  [/лилов/, "лиловым", { hue: 290 }],
   [/розов/, "розовым", { hue: 320 }],
   [/бел/, "белым", { saturation: 0 }],
 ];
@@ -54,7 +59,7 @@ function channelNumber(t: string): number | undefined {
 }
 
 const WORDS = {
-  light: /(свет|лент|ламп|подсветк|освещени)/,
+  light: /(свет|лент|ламп|подсветк|освещени|полоск)/,
   on: /(включи|зажги|включить|запали)/,
   off: /(выключи|погаси|потуши|выруби|отключи|выключить)/,
   vacuum: /(пылесос|робот|уборк)/,
@@ -106,7 +111,7 @@ function lightTarget(t: string): Record<string, unknown> {
   const target: Record<string, unknown> = {};
   const place = /(?:^|\s)(?:в|во|на)\s+([а-яё]{4,})/.exec(t)?.[1];
   if (place) target.where = place;
-  if (has(t, /(лент|подсветк)/)) target.group = "strip";
+  if (has(t, /(лент|подсветк|полоск)/)) target.group = "strip";
   else if (has(t, /лампочк/)) target.group = "bulb";
   return target;
 }
@@ -135,6 +140,20 @@ function planOne(part: string): Step[] | null {
   // --- light ---
   if (has(t, WORDS.light) && !has(t, WORDS.vacuum) && !has(t, WORDS.camera)) {
     const target = lightTarget(t);
+    // a colour other than white wins over a warmth word («красный и тёплый»)
+    for (const [re, name, patch] of COLORS) {
+      if (patch.saturation !== 0 && has(t, re)) return [{ tool: "lights_set", input: { on: true, brightness: 100, saturation: 100, ...patch, ...target }, say: `Свет стал ${name}` }];
+    }
+    // warmth of the white light (bulbs only): «тёплый свет», «холодное освещение», «4000 кельвин». Not for «выключи».
+    const kelvin = /(?<![\d])([2-6]\d{3})\s*(?:кельвин[а-яё]*|к|k)(?![а-яёa-z])/.exec(t)?.[1];
+    const WARMTH = "(тёпл|тепл|уютн|нейтральн|естественн|холодн|дневн)[а-яё]*";
+    const LIGHT_NOUN = "(свет|освещени|лампочк|лент|подсветк)[а-яё]*";
+    const warmWord = new RegExp(`${WARMTH}\\s+${LIGHT_NOUN}|${LIGHT_NOUN}\\s+${WARMTH}`).exec(t)?.[0];
+    const warmth = kelvin ? Number(kelvin) : warmWord === undefined ? undefined : /(тёпл|тепл|уютн)/.test(warmWord) ? 2700 : /(нейтральн|естественн)/.test(warmWord) ? 4000 : 6500;
+    if (warmth !== undefined && !has(t, WORDS.off) && !has(t, /(ярче|темнее|приглуши)/)) {
+      const k = Math.max(2700, Math.min(6500, warmth));
+      return [{ tool: "lights_set", input: { on: true, temperature: k, group: "bulb", ...target }, say: k <= 3200 ? "Сделал свет тёплым" : k >= 5500 ? "Сделал свет холодным" : "Сделал свет нейтральным" }];
+    }
     for (const [re, name, patch] of COLORS) {
       if (has(t, re)) return [{ tool: "lights_set", input: { on: true, brightness: 100, saturation: 100, ...patch, ...target }, say: `Свет стал ${name}` }];
     }
