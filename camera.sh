@@ -6,7 +6,7 @@
 #   ./camera.sh stop         stop what this script started
 #   ./camera.sh restart      rebuild the web app, stop, then start in the background
 #   ./camera.sh build-web    rebuild the web app only (the backend serves it from disk: reload the page)
-#   ./camera.sh restart backend   rebuild the web app, restart only the backend: go2rtc keeps its session with the camera, so the picture does not glitch
+#   ./camera.sh restart backend   rebuild the web app, restart adb (TV), restart only the backend: go2rtc keeps its session with the camera, so the picture does not glitch
 #   ./camera.sh status       what is running, and the addresses
 #   ./camera.sh logs         follow the logs of both
 #   ./camera.sh motor left|right|up|down     move the camera by hand (go2rtc must be running)
@@ -177,6 +177,21 @@ build_web() {
   (cd web && { [ -d node_modules ] || npm install --no-audit --no-fund; } && npm run build >/dev/null) \
     && say "Веб-приложение собрано" \
     || warn "сборка веб-приложения не удалась, остаётся прежняя (подробности: cd web && npm run build)"
+}
+
+# Restarts the adb server and reconnects to the TV (TV_ADB in backend/.env). An adb server that has been running for days
+# can get stuck on "No route to host" while the TV is fine; a fresh one connects at once. Never fatal: no adb or no TV is fine.
+restart_adb() {
+  local target; target=$(env_value TV_ADB)
+  [ -n "$target" ] || return 0
+  command -v adb >/dev/null 2>&1 || return 0
+  adb kill-server >/dev/null 2>&1 || true
+  adb start-server >/dev/null 2>&1 || { warn "adb: сервер не запустился"; return 0; }
+  if adb connect "$target" 2>&1 | grep -Eqi "connected to|already connected"; then
+    say "adb: сервер перезапущен, ТВ $target подключён"
+  else
+    warn "adb: сервер перезапущен, но ТВ $target не отвечает (включена ли отладка по сети?)"
+  fi
 }
 
 up() {
@@ -420,8 +435,8 @@ case "${1:-start}" in
   up)            up; summary ;;
   stop)          stop_all ;;
   restart)       case "${2:-}" in
-                   backend) build_web; stop_one backend; up; summary ;;   # go2rtc and the camera session stay as they are
-                   "")      build_web; stop_all; up; summary ;;
+                   backend) build_web; restart_adb; stop_one backend; up; summary ;;   # go2rtc and the camera session stay as they are
+                   "")      build_web; restart_adb; stop_all; up; summary ;;
                    *)       die "использование: ./camera.sh restart [backend]" ;;
                  esac ;;
   build-web)     build_web ;;
