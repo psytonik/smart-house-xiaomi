@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { AuthError } from "../api";
-import { afterWakeWord, pickHeard, askAssistant, assistantConfigured, homeFromGps, homePlace, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, stopSpeaking, voiceChoice, wakeMode, type PiperVoice, type Recognition, type Turn } from "../assistant";
+import { afterWakeWord, pickHeard, askAssistant, assistantConfigured, homeFromGps, homePlace, piperVoices, recognitionCtor, rememberPhrase, russianVoices, speak, spokenReply, stopSpeaking, voiceChoice, wakeMode, type PiperVoice, type Recognition, type Turn } from "../assistant";
 
 type Phase = "idle" | "listening" | "thinking";
 
@@ -75,7 +75,7 @@ export function Voice({ onAuthLost }: { onAuthLost: () => void }) {
         setTaught(answer.learned === true);
         const run = ++speechRun.current;
         setSpeaking(true);
-        void speak(answer.reply).then(() => {
+        void speak(spokenReply(answer)).then(() => {
           if (run === speechRun.current) setSpeaking(false);
         });
       } catch (e) {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { afterWakeWord, pickHeard, piperVoices, russianVoices, sentences, speak, stopSpeaking } from "./assistant";
+import { afterWakeWord, pickHeard, piperVoices, russianVoices, sentences, speak, spokenReply, stopSpeaking } from "./assistant";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -99,5 +99,15 @@ describe("sentences for the slow cloned voice", () => {
     const parts = sentences(text);
     expect(parts.length).toBeGreaterThan(1);
     expect(parts.join(" ")).toBe(text);
+  });
+});
+
+describe("spokenReply", () => {
+  it("acknowledges a command that did something, then answers", () => {
+    expect(spokenReply({ reply: "Свет включён.", actions: [{ tool: "lights_set", input: {}, ok: true }] })).toBe("Исполняю, мой господин. Свет включён.");
+  });
+  it("just answers a question or a failed action", () => {
+    expect(spokenReply({ reply: "Сейчас 5 часов.", actions: [] })).toBe("Сейчас 5 часов.");
+    expect(spokenReply({ reply: "Не вышло.", actions: [{ tool: "lights_set", input: {}, ok: false }] })).toBe("Не вышло.");
   });
 });

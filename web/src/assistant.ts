@@ -13,6 +13,11 @@ export interface AssistantAnswer {
   actions: Array<{ tool: string; input: unknown; ok: boolean }>;
 }
 
+/** What is said aloud: a command that did something is first acknowledged, then answered. */
+export function spokenReply(answer: Pick<AssistantAnswer, "reply" | "actions">): string {
+  return answer.actions.some((a) => a.ok) ? `Исполняю, мой господин. ${answer.reply}` : answer.reply;
+}
+
 /** Whether the server has an Anthropic key, i.e. whether the voice button should show at all. */
 export async function assistantConfigured(): Promise<boolean> {
   try {
