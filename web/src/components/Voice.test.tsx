@@ -86,21 +86,19 @@ describe("Voice with Piper", () => {
     expect(JSON.parse(String(tts[1]!.body))).toMatchObject({ text: "Свет выключен.", voice: "ru_RU-denis-medium" });
   });
 
-  it("offers a suggestion from the journal and teaches it on a tap", async () => {
-    let offered = [{ phrase: "хочу темноту", becameText: "выключи свет", times: 1 }];
-    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url === "/api/assistant/suggestions") return reply({ suggestions: offered });
-      if (url === "/api/assistant/teach") return ((offered = []), reply({ ok: true }));
+  it("does not offer phrase pairs from the journal to teach", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/assistant/suggestions") return reply({ suggestions: [{ phrase: "хочу темноту", becameText: "выключи свет", times: 1 }] });
       if (url === "/api/tts") return reply({ piper: false, default: "", voices: [] });
       return reply({ configured: true });
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<Voice onAuthLost={() => {}} />);
     fireEvent.click(await screen.findByRole("button", { name: "Talk to the house" }));
-    fireEvent.click(await screen.findByRole("button", { name: /хочу темноту/ }));
-    await waitFor(() => expect(screen.queryByRole("button", { name: /хочу темноту/ })).toBeNull());
-    const call = fetchMock.mock.calls.find(([u]) => u === "/api/assistant/teach")!;
-    expect(JSON.parse(String((call[1] as RequestInit).body))).toEqual({ text: "хочу темноту" });
+    await screen.findByRole("button", { name: /Определить по GPS/ });
+    expect(screen.queryByText(/Teach it once/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /хочу темноту/ })).toBeNull();
+    expect(fetchMock.mock.calls.some(([u]) => u === "/api/assistant/suggestions")).toBe(false);
   });
 });
 

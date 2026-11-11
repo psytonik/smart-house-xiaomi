@@ -138,7 +138,9 @@ function planOne(part: string): Step[] | null {
   if (lives) return [{ tool: "home_place", input: { name: lives[1]!.trim() }, say: "Запомнил, где вы живёте" }];
 
   // --- light ---
-  if (has(t, WORDS.light) && !has(t, WORDS.vacuum) && !has(t, WORDS.camera)) {
+  // «сделай зелёный цвет» names a colour without the word «свет»: still the lights
+  const colourOnly = has(t, /(?<![а-яё])цвет/) && COLORS.some(([re]) => has(t, re));
+  if ((has(t, WORDS.light) || colourOnly) && !has(t, WORDS.vacuum) && !has(t, WORDS.camera) && !has(t, WORDS.tv)) {
     const target = lightTarget(t);
     // a colour other than white wins over a warmth word («красный и тёплый»)
     for (const [re, name, patch] of COLORS) {

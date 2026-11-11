@@ -738,5 +738,7 @@ describe("quick lights phrases name their target", () => {
     assert.deepEqual(input("сделай тёплый красный свет"), { on: true, brightness: 100, saturation: 100, hue: 0 });
     assert.deepEqual(input("включи свет в холодной комнате"), { on: true, where: "холодной" });
   });
+  it("a colour without the word «свет»: «сделать зелёный цвет»", () =>
+    assert.deepEqual(input("каппара сделать зелёный цвет"), { on: true, brightness: 100, saturation: 100, hue: 120 }));
   it("nothing named stays everything", () => assert.deepEqual(input("включи свет"), { on: true }));
 });

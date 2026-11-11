@@ -47,27 +47,6 @@ export async function rememberPhrase(text: string): Promise<void> {
   if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not remember (${res.status})`);
 }
 
-export interface Suggestion {
-  phrase: string;
-  becameText: string;
-  times: number;
-}
-
-/** Phrases that failed and were followed by a command that worked: "say X means Y". */
-export async function suggestions(): Promise<Suggestion[]> {
-  try {
-    const res = await api("/api/assistant/suggestions");
-    return res.ok ? (((await res.json()) as { suggestions?: Suggestion[] }).suggestions ?? []) : [];
-  } catch {
-    return [];
-  }
-}
-
-export async function teachPhrase(text: string): Promise<void> {
-  const res = await api("/api/assistant/teach", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
-  if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `could not teach (${res.status})`);
-}
-
 /** Where the house is, if it was told (a city said aloud or the browser's GPS). */
 export async function homePlace(): Promise<{ set: boolean; name?: string }> {
   try {
